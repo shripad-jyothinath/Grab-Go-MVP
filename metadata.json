@@ -1,0 +1,5 @@
+{
+  "name": "CampusCrave",
+  "description": "A streamlined food pre-ordering app for students and campus restaurants. Features AI-powered menu creation from images and real-time order management.",
+  "requestFramePermissions": []
+}
