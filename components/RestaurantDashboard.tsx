@@ -184,16 +184,24 @@ const RestaurantDashboard: React.FC = () => {
                   </div>
                   <div className="flex gap-2">
                     <input 
-                        type="text"
-                        placeholder="Enter ID"
+                        type="tel"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        autoComplete="off"
+                        placeholder="12345"
                         className="w-28 px-3 py-2 border border-slate-300 rounded-lg text-center font-mono tracking-widest focus:ring-2 focus:ring-indigo-500 outline-none"
                         maxLength={5}
                         value={verificationInput[order.id] || ''}
-                        onChange={(e) => setVerificationInput(prev => ({...prev, [order.id]: e.target.value}))}
+                        onChange={(e) => {
+                            // Only allow numbers
+                            if (/^\d*$/.test(e.target.value)) {
+                                setVerificationInput(prev => ({...prev, [order.id]: e.target.value}))
+                            }
+                        }}
                     />
                     <button
                         onClick={() => handleVerify(order.id)}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition active:bg-indigo-800"
                     >
                         Verify
                     </button>
@@ -228,10 +236,10 @@ const RestaurantDashboard: React.FC = () => {
           <button 
             onClick={() => fileInputRef.current?.click()}
             disabled={isProcessing}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-lg font-medium flex items-center gap-2 shadow-lg shadow-indigo-500/20 transition disabled:opacity-70"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-lg font-medium flex items-center gap-2 shadow-lg shadow-indigo-500/20 transition disabled:opacity-70 active:scale-95"
           >
             {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
-            {isProcessing ? 'Analyzing Menu...' : 'Upload Menu Photo'}
+            {isProcessing ? 'Analyzing Menu...' : 'Scan Menu Photo'}
           </button>
         </div>
       </div>
@@ -260,6 +268,7 @@ const RestaurantDashboard: React.FC = () => {
                   <span className="absolute left-3 top-2 text-slate-500">$</span>
                   <input
                     type="number"
+                    inputMode="decimal"
                     placeholder="0.00"
                     className="w-full pl-7 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
                     value={newItem.price}
@@ -267,7 +276,7 @@ const RestaurantDashboard: React.FC = () => {
                   />
                 </div>
                 <select
-                  className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
+                  className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none bg-white"
                   value={newItem.category}
                   onChange={e => setNewItem({ ...newItem, category: e.target.value })}
                 >
@@ -280,7 +289,7 @@ const RestaurantDashboard: React.FC = () => {
             </div>
             <button
               onClick={handleManualAdd}
-              className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 rounded-lg transition flex items-center justify-center gap-2"
+              className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-lg transition flex items-center justify-center gap-2 active:scale-[0.98]"
             >
               <Plus className="w-5 h-5" /> Add Item
             </button>
@@ -292,7 +301,7 @@ const RestaurantDashboard: React.FC = () => {
           <h3 className="text-lg font-bold text-slate-800 mb-2">Current Menu ({restaurantMenu.length})</h3>
           <div className="max-h-[500px] overflow-y-auto pr-2 space-y-3">
             {restaurantMenu.map(item => (
-              <div key={item.id} className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex justify-between items-start group">
+              <div key={item.id} className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex justify-between items-start group active:bg-slate-50">
                 <div>
                   <h4 className="font-semibold text-slate-800">{item.name}</h4>
                   <p className="text-xs text-slate-500 mb-1">{item.category}</p>
@@ -301,7 +310,7 @@ const RestaurantDashboard: React.FC = () => {
                 </div>
                 <button 
                   onClick={() => deleteMenuItem(item.id)}
-                  className="text-slate-400 hover:text-red-500 transition p-1 opacity-0 group-hover:opacity-100"
+                  className="text-slate-400 hover:text-red-500 transition p-2"
                 >
                   <Trash2 className="w-5 h-5" />
                 </button>
@@ -315,7 +324,7 @@ const RestaurantDashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-20">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <ChefHat className="text-orange-600" />
@@ -323,16 +332,16 @@ const RestaurantDashboard: React.FC = () => {
                {user?.name} <span className="text-orange-600 font-normal text-sm">Admin</span>
             </h1>
           </div>
-          <button onClick={logout} className="text-sm text-slate-500 hover:text-slate-800">
+          <button onClick={logout} className="text-sm text-slate-500 hover:text-slate-800 px-3 py-1">
             Log Out
           </button>
         </div>
         
         {/* Tabs */}
-        <div className="max-w-5xl mx-auto px-4 flex gap-6">
+        <div className="max-w-5xl mx-auto px-4 flex gap-6 overflow-x-auto scrollbar-hide">
           <button
             onClick={() => setActiveTab('orders')}
-            className={`pb-3 pt-2 text-sm font-medium border-b-2 transition-colors ${
+            className={`pb-3 pt-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === 'orders' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -340,7 +349,7 @@ const RestaurantDashboard: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('menu')}
-            className={`pb-3 pt-2 text-sm font-medium border-b-2 transition-colors ${
+            className={`pb-3 pt-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === 'menu' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >

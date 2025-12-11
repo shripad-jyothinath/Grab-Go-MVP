@@ -63,14 +63,14 @@ const StudentDashboard: React.FC = () => {
     return (
       <div className="min-h-screen bg-white">
         <header className="sticky top-0 bg-white border-b border-slate-100 p-4 flex items-center gap-4 z-10">
-          <button onClick={() => setShowCart(false)} className="text-slate-500 font-medium">
+          <button onClick={() => setShowCart(false)} className="text-slate-500 font-medium px-2 py-1">
             ← Back
           </button>
           <h1 className="text-lg font-bold flex-1 text-center">Your Order</h1>
           <div className="w-10"></div> {/* Spacer */}
         </header>
 
-        <div className="p-4 pb-32">
+        <div className="p-4 pb-48">
           {cart.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-400">
               <ShoppingBag className="w-16 h-16 mb-4 opacity-50" />
@@ -120,7 +120,7 @@ const StudentDashboard: React.FC = () => {
                     type="time" 
                     value={pickupTime}
                     onChange={(e) => setPickupTime(e.target.value)}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg"
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white"
                    />
                 </div>
               </div>
@@ -129,7 +129,7 @@ const StudentDashboard: React.FC = () => {
         </div>
 
         {cart.length > 0 && (
-          <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-100 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+          <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-100 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] pb-8">
             <div className="max-w-md mx-auto">
                <div className="flex justify-between items-center mb-4">
                   <span className="text-slate-500">Total</span>
@@ -159,7 +159,7 @@ const StudentDashboard: React.FC = () => {
               <h1 className="text-xl font-bold text-slate-800">Hello, {user?.name}</h1>
               <p className="text-sm text-slate-500">Choose a place to eat</p>
             </div>
-            <button onClick={logout} className="text-sm text-slate-400">Logout</button>
+            <button onClick={logout} className="text-sm text-slate-400 px-2 py-1">Logout</button>
           </div>
         </header>
 
@@ -190,7 +190,7 @@ const StudentDashboard: React.FC = () => {
                <div 
                  key={r.id}
                  onClick={() => handleRestaurantSelect(r)}
-                 className="bg-white rounded-2xl shadow-sm hover:shadow-md transition cursor-pointer overflow-hidden border border-slate-100 group"
+                 className="bg-white rounded-2xl shadow-sm hover:shadow-md transition cursor-pointer overflow-hidden border border-slate-100 group active:scale-[0.99]"
                >
                  <div className="h-40 overflow-hidden relative">
                     <img src={r.image} alt={r.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
@@ -233,7 +233,7 @@ const StudentDashboard: React.FC = () => {
           <div className="relative">
             <Search className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
             <input
-              type="text"
+              type="search"
               placeholder={`Search ${selectedRestaurant.name}...`}
               className="w-full pl-10 pr-4 py-2 bg-slate-100 border-none rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none"
               value={searchTerm}
@@ -268,7 +268,7 @@ const StudentDashboard: React.FC = () => {
            </div>
         ) : (
           filteredMenu.map(item => (
-            <div key={item.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex justify-between gap-4">
+            <div key={item.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex justify-between gap-4 active:scale-[0.99] transition-transform">
               <div className="flex-1">
                 <h3 className="font-bold text-slate-800 mb-1">{item.name}</h3>
                 <p className="text-xs text-slate-500 line-clamp-2 mb-2">{item.description}</p>
@@ -280,7 +280,7 @@ const StudentDashboard: React.FC = () => {
               <div className="flex flex-col justify-end">
                 <button
                   onClick={() => addToCart(item)}
-                  className="w-10 h-10 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center hover:bg-orange-600 hover:text-white transition-colors"
+                  className="w-10 h-10 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center hover:bg-orange-600 hover:text-white transition-colors active:bg-orange-700"
                 >
                   <Plus className="w-5 h-5" />
                 </button>
@@ -292,19 +292,21 @@ const StudentDashboard: React.FC = () => {
 
       {/* Sticky Cart Button */}
       {cartItemCount > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-md px-4">
-          <button
-            onClick={() => setShowCart(true)}
-            className="w-full bg-slate-900 text-white p-4 rounded-2xl shadow-xl flex items-center justify-between hover:scale-[1.02] transition-transform"
-          >
-            <div className="flex items-center gap-3">
-              <div className="bg-orange-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">
-                {cartItemCount}
+        <div className="fixed bottom-0 left-0 w-full px-4 pb-8 pt-4 bg-gradient-to-t from-slate-50 to-transparent">
+          <div className="max-w-md mx-auto">
+            <button
+              onClick={() => setShowCart(true)}
+              className="w-full bg-slate-900 text-white p-4 rounded-2xl shadow-xl flex items-center justify-between hover:scale-[1.02] active:scale-[0.98] transition-transform"
+            >
+              <div className="flex items-center gap-3">
+                <div className="bg-orange-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">
+                  {cartItemCount}
+                </div>
+                <span className="font-medium">View Cart</span>
               </div>
-              <span className="font-medium">View Cart</span>
-            </div>
-            <span className="font-bold text-lg">${cartTotal.toFixed(2)}</span>
-          </button>
+              <span className="font-bold text-lg">${cartTotal.toFixed(2)}</span>
+            </button>
+          </div>
         </div>
       )}
 
