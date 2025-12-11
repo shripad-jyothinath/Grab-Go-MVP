@@ -3,12 +3,17 @@ import { AppProvider, useApp } from './context/AppContext';
 import Login from './components/Login';
 import RestaurantDashboard from './components/RestaurantDashboard';
 import StudentDashboard from './components/StudentDashboard';
+import AdminDashboard from './components/AdminDashboard';
 
 const MainContent: React.FC = () => {
   const { user } = useApp();
 
   if (!user) {
     return <Login />;
+  }
+
+  if (user.role === 'admin') {
+    return <AdminDashboard />;
   }
 
   if (user.role === 'restaurant') {
