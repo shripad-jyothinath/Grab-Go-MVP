@@ -1,53 +1,70 @@
-export type UserRole = 'student' | 'restaurant' | 'admin' | null;
+export type UserRole = 'customer' | 'restaurant_owner' | 'admin';
+
+export interface Profile {
+  id: string; // auth.users.id
+  name: string;
+  phone?: string;
+  role: UserRole;
+  banned: boolean;
+  created_at: string;
+}
 
 export interface Restaurant {
   id: string;
+  owner_id: string;
   name: string;
-  cuisine: string;
-  image: string;
-  isApproved: boolean; // New field for approval status
+  email?: string;
+  verified: boolean;
+  banned: boolean;
+  payment_method: 'upi' | 'razorpay';
+  upi_id?: string;
+  upi_qr_url?: string;
+  razorpay_key_id?: string;
+  created_at: string;
+  // Local helper for UI (not in DB usually, but we can assume joins or generic image)
+  image?: string; 
+  cuisine?: string; // You might want to add this to your SQL schema if needed, or store in JSON
 }
 
 export interface MenuItem {
   id: string;
-  restaurantId: string;
+  restaurant_id: string;
   name: string;
   description: string;
   price: number;
-  category: string;
-  imageUrl?: string;
+  photo_url?: string;
+  category?: string; // Optional in SQL schema provided, but good for UI
+  created_at?: string;
 }
-
-export type OrderStatus = 'pending' | 'accepted' | 'declined' | 'ready' | 'completed' | 'cancelled';
 
 export interface CartItem extends MenuItem {
   quantity: number;
 }
 
+export type OrderStatus = 'pending' | 'ready' | 'completed' | 'cancelled';
+
 export interface Order {
   id: string;
-  displayId: string;
-  restaurantId: string;
-  studentName: string;
-  items: CartItem[];
-  totalAmount: number;
+  customer_id: string;
+  restaurant_id: string;
+  items: any[]; // JSONB in DB
+  total: number;
   status: OrderStatus;
-  timestamp: number;
-  readyTimestamp?: number; // Track when order became ready
-  pickupTime?: string;
+  pickup_code: string;
+  razorpay_order_id?: string;
+  paid: boolean;
+  created_at: string;
+  updated_at: string;
+  
+  // Joins for UI convenience
+  profiles?: { name: string; phone: string };
+  restaurants?: { name: string };
 }
 
-export interface User {
-  id: string;
-  name: string;
-  phoneNumber?: string; // Optional for admin, required for others usually
-  role: UserRole;
-  restaurantId?: string; // If role is restaurant
-}
-
+// Helper for UI notifications
 export interface AppNotification {
   id: string;
-  userId: string; // Who is this for?
+  userId: string;
   title: string;
   message: string;
   type: 'info' | 'success' | 'warning' | 'error';
@@ -59,8 +76,7 @@ export interface Rating {
   id: string;
   restaurantId: string;
   userId: string;
-  userName: string;
-  rating: number; // 1-5
-  comment?: string;
+  rating: number;
+  comment: string;
   timestamp: number;
 }

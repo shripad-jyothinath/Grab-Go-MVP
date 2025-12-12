@@ -16,11 +16,11 @@ import {
 const AdminDashboard: React.FC = () => {
   const { logout, restaurants, deleteRestaurant, approveRestaurant, orders, user, getRestaurantStats } = useApp();
 
-  const totalRevenue = orders.reduce((sum, order) => sum + order.totalAmount, 0);
+  const totalRevenue = orders.reduce((sum, order) => sum + order.total, 0);
   const totalOrders = orders.length;
 
-  const pendingRestaurants = restaurants.filter(r => !r.isApproved);
-  const activeRestaurants = restaurants.filter(r => r.isApproved);
+  const pendingRestaurants = restaurants.filter(r => !r.verified);
+  const activeRestaurants = restaurants.filter(r => r.verified);
 
   return (
     <div className="min-h-screen bg-slate-50">

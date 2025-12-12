@@ -16,7 +16,7 @@ const MainContent: React.FC = () => {
     return <AdminDashboard />;
   }
 
-  if (user.role === 'restaurant') {
+  if (user.role === 'restaurant_owner') {
     return <RestaurantDashboard />;
   }
 
