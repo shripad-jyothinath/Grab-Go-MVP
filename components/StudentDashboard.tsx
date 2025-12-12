@@ -27,7 +27,9 @@ import {
   Loader2,
   Lock,
   Wallet,
-  XCircle
+  XCircle,
+  Smartphone,
+  Monitor
 } from 'lucide-react';
 import { TEST_RESTAURANTS } from '../context/AppContext';
 
@@ -44,6 +46,7 @@ const StudentDashboard: React.FC = () => {
   const [lastOrder, setLastOrder] = useState<any>(null); 
   const [decryptedUpiLink, setDecryptedUpiLink] = useState<string>('#');
   const [hasClickedPay, setHasClickedPay] = useState(false);
+  const [isMobile, setIsMobile] = useState(true);
   
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
@@ -59,6 +62,15 @@ const StudentDashboard: React.FC = () => {
   // --- Logic ---
   const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled' && o.status !== 'declined');
   const cartTotal = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+
+  // Detect Mobile Device
+  useEffect(() => {
+      const checkMobile = () => {
+          const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+          return /android|ipad|iphone|ipod/i.test(userAgent);
+      };
+      setIsMobile(checkMobile());
+  }, []);
 
   const handleCheckout = async () => {
       // Check for Test Mode restriction
@@ -181,6 +193,8 @@ const StudentDashboard: React.FC = () => {
   // --- Renderers ---
   
   if (lastOrder) {
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(decryptedUpiLink)}`;
+
       return (
           <div className="fixed inset-0 z-[60] bg-white flex flex-col items-center justify-center p-6">
               <div className="bg-white rounded-2xl w-full max-w-md p-6 text-center animate-fade-in-up">
@@ -210,23 +224,41 @@ const StudentDashboard: React.FC = () => {
                       </div>
                   </div>
                   
-                  <p className="text-sm text-slate-500 mb-6 px-4">
-                      Please attach the note <strong>"Order {lastOrder.displayId}"</strong> when paying via UPI.
-                  </p>
+                  {isMobile ? (
+                    <p className="text-sm text-slate-500 mb-6 px-4">
+                        Please attach the note <strong>"Order {lastOrder.displayId}"</strong> when paying via UPI.
+                    </p>
+                  ) : (
+                    <p className="text-sm text-slate-500 mb-4 px-4 flex items-center justify-center gap-2">
+                       <Smartphone className="w-4 h-4" /> Scan with any UPI App
+                    </p>
+                  )}
+
+                  {/* Desktop QR Code View */}
+                  {!isMobile && decryptedUpiLink !== '#' && (
+                      <div className="mb-6 flex justify-center">
+                          <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+                              <img src={qrUrl} alt="UPI QR Code" className="w-48 h-48" />
+                          </div>
+                      </div>
+                  )}
 
                   <div className="space-y-3">
-                      <a 
-                        href={decryptedUpiLink} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        onClick={() => setHasClickedPay(true)}
-                        className="block w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition"
-                      >
-                          Pay with UPI
-                      </a>
+                      {isMobile && (
+                        <a 
+                            href={decryptedUpiLink} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            onClick={() => setHasClickedPay(true)}
+                            className="block w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition flex items-center justify-center gap-2"
+                        >
+                            <Zap className="w-4 h-4" /> Pay with UPI
+                        </a>
+                      )}
                       
-                      {hasClickedPay && (
-                          <button onClick={handlePaymentComplete} className="w-full bg-white border border-slate-200 text-slate-700 font-bold py-3 rounded-xl hover:bg-slate-50 transition animate-fade-in">
+                      {/* Show 'I have Paid' immediately on desktop OR after click on mobile */}
+                      {(hasClickedPay || !isMobile) && (
+                          <button onClick={handlePaymentComplete} className={`w-full font-bold py-3 rounded-xl transition animate-fade-in ${!isMobile ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
                               I have Paid
                           </button>
                       )}
