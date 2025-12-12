@@ -101,6 +101,39 @@ export const apiCreateOrder = async (restaurantId: string, items: CartItem[], to
   return { ok: true, order: data };
 };
 
+export const apiCreateTestOrder = async (restaurantId: string, items: CartItem[], total: number) => {
+    // Current user logic
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    // Fallback for bypass admin who doesn't have a real session ID sometimes
+    const customerId = session?.user?.id || 'master-admin-bypass'; 
+    
+    const pickupCode = Math.floor(1000 + Math.random() * 9000).toString();
+  
+    const { data, error } = await supabase
+      .from('test_orders')
+      .insert([
+        {
+          customer_id: customerId,
+          restaurant_id: restaurantId,
+          items: items,
+          total: total,
+          status: 'pending',
+          pickup_code: pickupCode,
+          paid: true // Test orders auto-pay
+        }
+      ])
+      .select()
+      .single();
+  
+    if (error) {
+      console.error("Create Test Order Error:", error);
+      throw new Error(error.message);
+    }
+  
+    return { ok: true, order: { ...data, is_test: true } };
+};
+
 export const apiMarkPaid = async (orderId: string, merchantReference?: string) => {
    const { data: { session } } = await supabase.auth.getSession();
    if (!session) throw new Error("Not authenticated");
@@ -118,21 +151,34 @@ export const apiCompleteOrder = async (orderId: string, code: string) => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error("Not authenticated");
 
-    // Fetch order to verify code
-    const { data: order, error: fetchError } = await supabase
+    // Try standard orders first
+    let { data: order, error: fetchError } = await supabase
         .from('orders')
         .select('pickup_code, status')
         .eq('id', orderId)
         .single();
     
-    if (fetchError || !order) throw new Error("Order not found");
+    let table = 'orders';
+
+    // If not found, check test orders
+    if (fetchError || !order) {
+         const { data: testOrder, error: testError } = await supabase
+            .from('test_orders')
+            .select('pickup_code, status')
+            .eq('id', orderId)
+            .single();
+         
+         if (testError || !testOrder) throw new Error("Order not found");
+         order = testOrder;
+         table = 'test_orders';
+    }
 
     if (order.pickup_code !== code) {
         throw new Error("Invalid Pickup Code");
     }
 
     const { error } = await supabase
-        .from('orders')
+        .from(table)
         .update({ status: 'completed' })
         .eq('id', orderId);
 
@@ -141,10 +187,20 @@ export const apiCompleteOrder = async (orderId: string, code: string) => {
 };
 
 export const apiUpdateOrderStatus = async (orderId: string, status: string) => {
+    // Try update regular order
     const { error } = await supabase
         .from('orders')
         .update({ status })
         .eq('id', orderId);
+        
+    // If error or maybe logic suggests it didn't find rows (Supabase update doesn't error on 0 rows), 
+    // we assume we might need to update test_orders. 
+    // However, simplest way is to just try updating test_orders too or check context. 
+    // For MVP, we'll try updating test_orders if we're in test mode flow, but doing both is safe.
+    if (!error) {
+         await supabase.from('test_orders').update({ status }).eq('id', orderId);
+    }
+    
     if (error) throw new Error(error.message);
 };
 

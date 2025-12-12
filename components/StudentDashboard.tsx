@@ -48,12 +48,6 @@ const StudentDashboard: React.FC = () => {
   };
 
   const processOrder = async (rest: Restaurant) => {
-      // Block checkout if in Test Mode
-      if (isTestMode) {
-          alert("Test Mode Active: Payments are disabled. Maintenance in progress.");
-          return;
-      }
-
       try {
           const total = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
           const response = await placeOrder(rest.id, cart, total);
@@ -99,6 +93,13 @@ const StudentDashboard: React.FC = () => {
                       <CheckCircle2 className="w-8 h-8" />
                   </div>
                   <h2 className="text-2xl font-bold text-slate-800 mb-2">Order Placed!</h2>
+                  
+                  {lastOrder.is_test && (
+                      <div className="bg-yellow-100 text-yellow-800 text-xs font-bold px-3 py-1 rounded-full mb-4 inline-block">
+                          TEST ORDER
+                      </div>
+                  )}
+
                   <p className="text-slate-500 mb-6">Pickup Code: <span className="font-mono font-bold text-slate-900 text-lg">{lastOrder.pickup_code}</span></p>
                   
                   <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
@@ -106,25 +107,31 @@ const StudentDashboard: React.FC = () => {
                       <p className="text-3xl font-bold text-slate-900">₹{lastOrder.total.toFixed(2)}</p>
                   </div>
 
-                  {isRazorpay ? (
-                      <button className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl mb-4">
-                          Pay with Razorpay
-                      </button>
-                  ) : (
-                      <div className="space-y-4">
-                          <p className="text-sm text-slate-500">Scan to pay via UPI</p>
-                          <div className="bg-white p-2 inline-block rounded-xl border border-slate-100 shadow-sm">
-                              <img 
-                                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(upiLink)}`} 
-                                alt="UPI QR" 
-                                className="w-40 h-40 mix-blend-multiply" 
-                              />
-                          </div>
-                          <a href={upiLink} className="block w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 rounded-xl">
-                              Pay via UPI App
-                          </a>
-                          <p className="text-xs text-slate-400">The note is pre-filled with your Order ID & Pickup Code.</p>
+                  {lastOrder.is_test ? (
+                      <div className="text-center text-sm text-slate-500">
+                          <p>This is a test order. No payment required.</p>
                       </div>
+                  ) : (
+                      isRazorpay ? (
+                          <button className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl mb-4">
+                              Pay with Razorpay
+                          </button>
+                      ) : (
+                          <div className="space-y-4">
+                              <p className="text-sm text-slate-500">Scan to pay via UPI</p>
+                              <div className="bg-white p-2 inline-block rounded-xl border border-slate-100 shadow-sm">
+                                  <img 
+                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(upiLink)}`} 
+                                    alt="UPI QR" 
+                                    className="w-40 h-40 mix-blend-multiply" 
+                                  />
+                              </div>
+                              <a href={upiLink} className="block w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 rounded-xl">
+                                  Pay via UPI App
+                              </a>
+                              <p className="text-xs text-slate-400">The note is pre-filled with your Order ID & Pickup Code.</p>
+                          </div>
+                      )
                   )}
 
                   <button onClick={() => setLastOrder(null)} className="mt-6 text-slate-500 font-medium hover:text-slate-800">
@@ -248,15 +255,18 @@ const StudentDashboard: React.FC = () => {
                       </div>
                   ) : (
                       orders.map(o => (
-                        <div key={o.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                        <div key={o.id} className={`p-4 rounded-xl border shadow-sm ${o.is_test ? 'bg-yellow-50 border-yellow-200' : 'bg-white border-slate-100'}`}>
                             <div className="flex justify-between items-start mb-2">
                                 <div>
                                     <p className="font-bold text-slate-800">Order #{o.pickup_code}</p>
                                     <p className="text-xs text-slate-500">{new Date(o.created_at).toLocaleDateString()} at {new Date(o.created_at).toLocaleTimeString()}</p>
                                 </div>
-                                <span className={`px-2 py-1 rounded text-xs font-bold capitalize ${o.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                                    {o.status}
-                                </span>
+                                <div className="flex flex-col items-end gap-1">
+                                    {o.is_test && <span className="text-[10px] font-bold bg-yellow-200 text-yellow-800 px-1 rounded">TEST</span>}
+                                    <span className={`px-2 py-1 rounded text-xs font-bold capitalize ${o.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                                        {o.status}
+                                    </span>
+                                </div>
                             </div>
                             <div className="py-2 border-t border-slate-50 mt-2">
                                 <p className="text-sm text-slate-600">{o.items.map((i: any) => `${i.quantity}x ${i.name}`).join(', ')}</p>
@@ -278,7 +288,7 @@ const StudentDashboard: React.FC = () => {
                   {isTestMode && (
                       <div className="bg-yellow-50 p-3 rounded-xl border border-yellow-200 text-yellow-800 text-sm flex items-center gap-2">
                           <AlertTriangle className="w-4 h-4" />
-                          <span>Payments are disabled during maintenance.</span>
+                          <span>Test Mode Active. Orders are simulated.</span>
                       </div>
                   )}
                   {cart.length === 0 ? (
@@ -310,10 +320,9 @@ const StudentDashboard: React.FC = () => {
                             </div>
                             <button 
                                 onClick={handleCheckout} 
-                                disabled={isTestMode}
-                                className={`w-full font-bold py-4 rounded-xl ${isTestMode ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-slate-900 text-white'}`}
+                                className={`w-full font-bold py-4 rounded-xl bg-slate-900 text-white`}
                             >
-                                {isTestMode ? 'Checkout Disabled' : 'Confirm Order'}
+                                {isTestMode ? 'Place Test Order' : 'Confirm Order'}
                             </button>
                         </div>
                       </>

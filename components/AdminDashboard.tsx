@@ -19,12 +19,12 @@ import {
 const AdminDashboard: React.FC = () => {
   const { logout, restaurants, deleteRestaurant, approveRestaurant, orders, user, getRestaurantStats, isTestMode, toggleTestMode } = useApp();
 
-  const totalRevenue = orders.reduce((sum, order) => sum + order.total, 0);
-  const totalOrders = orders.length;
+  // FILTER: Exclude test orders from stats
+  const realOrders = orders.filter(o => !o.is_test);
 
-  // Filter out the test restaurants from "Pending" list if they accidentally appear (though filtered in context, safe to be sure)
-  // AppContext filters mocks out of `restaurants` unless TestMode is ON. 
-  // If TestMode is ON, mocks appear in `restaurants`. Mocks are verified=true usually.
+  const totalRevenue = realOrders.reduce((sum, order) => sum + order.total, 0);
+  const totalOrders = realOrders.length;
+
   const pendingRestaurants = restaurants.filter(r => !r.verified);
   const activeRestaurants = restaurants.filter(r => r.verified);
 
@@ -71,7 +71,7 @@ const AdminDashboard: React.FC = () => {
             <AlertTriangle className="w-5 h-5" />
             <div>
               <p className="font-bold">System in Test Mode</p>
-              <p className="text-sm">Mock restaurants injected. Public payments disabled. Turn off to resume normal operations.</p>
+              <p className="text-sm">Mock restaurants injected. Orders are saved to test environment and do not affect revenue stats.</p>
             </div>
           </div>
         )}
@@ -93,7 +93,7 @@ const AdminDashboard: React.FC = () => {
               <ShoppingBag className="w-8 h-8" />
             </div>
             <div>
-              <p className="text-sm text-slate-500 font-medium">Total Orders</p>
+              <p className="text-sm text-slate-500 font-medium">Total Orders (Live)</p>
               <p className="text-2xl font-bold text-slate-800">{totalOrders}</p>
             </div>
           </div>
@@ -103,7 +103,7 @@ const AdminDashboard: React.FC = () => {
               <TrendingUp className="w-8 h-8" />
             </div>
             <div>
-              <p className="text-sm text-slate-500 font-medium">Total Revenue</p>
+              <p className="text-sm text-slate-500 font-medium">Total Revenue (Live)</p>
               <p className="text-2xl font-bold text-slate-800">${totalRevenue.toFixed(2)}</p>
             </div>
           </div>

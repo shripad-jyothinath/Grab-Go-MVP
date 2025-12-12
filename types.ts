@@ -61,6 +61,9 @@ export interface Order {
   // Joins (fetched via select string)
   profiles?: { name: string; phone: string };
   restaurants?: { name: string };
+  
+  // Test Mode Flag
+  is_test?: boolean;
 }
 
 export interface AppNotification {

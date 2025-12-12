@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { supabase } from '../lib/supabase';
 import { 
   apiCreateOrder, 
+  apiCreateTestOrder,
   apiMarkPaid, 
   apiCompleteOrder, 
   fetchUserProfile, 
@@ -137,9 +138,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // 4. Realtime Subscription for Orders & Restaurants (to catch config changes)
     const orderChannel = supabase.channel('public:orders')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-         refreshOrders(); // Refetch on any change for simplicity
+         refreshOrders(); 
       })
       .subscribe();
+      
+    // Subscribe to test_orders as well if needed, but for simplicity we'll just poll on mode change
+    // or rely on local state updates for test mode speed
 
     const restChannel = supabase.channel('public:restaurants')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurants' }, () => {
@@ -206,23 +210,57 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const refreshOrders = async () => {
       if (!user) return;
       
+      // 1. Fetch Real Orders
       let query = supabase.from('orders').select('*, profiles(name, phone)');
       
       if (user.role === 'restaurant_owner' && restaurant) {
           query = query.eq('restaurant_id', restaurant.id);
       } else if (user.role === 'customer') {
           query = query.eq('customer_id', user.id);
-      } else if (user.role === 'admin') {
-          // Admin sees all
-      }
+      } 
       
-      const { data } = await query.order('created_at', { ascending: false });
-      if (data) setOrders(data as any);
+      const { data: realOrders } = await query.order('created_at', { ascending: false });
+      let allOrders = realOrders ? (realOrders as any[]) : [];
+
+      // 2. Fetch Test Orders if Test Mode is ON
+      // We read `isTestMode` from state, but inside useEffect it might be stale? 
+      // Safe to fetch if enabled.
+      // NOTE: We also fetch test orders if the restaurant is a test one (but restaurant state might be null if admin)
+      if (isTestMode) {
+          let testQuery = supabase.from('test_orders').select('*');
+          
+          if (user.role === 'customer') {
+             // For bypass admin customer_id is 'master-admin-bypass', for real user it's uuid. 
+             // test_orders.customer_id is text so this works.
+             testQuery = testQuery.eq('customer_id', user.id);
+          }
+          // If admin, we fetch all test orders to show them? Or just let them exist in backend?
+          // If restaurant_owner, they won't see test orders unless they own a test restaurant (which is virtual).
+          // Virtual restaurant owners don't log in.
+
+          const { data: testData } = await testQuery.order('created_at', { ascending: false });
+          
+          if (testData) {
+              const mappedTests = testData.map(t => ({ 
+                  ...t, 
+                  is_test: true,
+                  // Hydrate restaurant detail for UI since separate table lacks join
+                  restaurants: restaurants.find(r => r.id === t.restaurant_id) || { name: 'Test Restaurant' }
+              }));
+              allOrders = [...mappedTests, ...allOrders];
+          }
+      }
+
+      // Sort combined
+      allOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      
+      setOrders(allOrders);
   };
 
   useEffect(() => {
+      // Re-fetch orders whenever user, restaurant, or TEST MODE changes
       if (user) refreshOrders();
-  }, [user, restaurant]);
+  }, [user, restaurant, isTestMode, restaurants]);
 
   // --- Auth ---
   const login = async (email: string, pass: string) => {
@@ -266,9 +304,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // --- Orders ---
   const placeOrder = async (restaurantId: string, items: CartItem[], total: number) => {
       try {
-        const response = await apiCreateOrder(restaurantId, items, total);
+        let response;
+        if (isTestMode) {
+             // Route to Test Table
+             response = await apiCreateTestOrder(restaurantId, items, total);
+        } else {
+             // Normal Flow
+             response = await apiCreateOrder(restaurantId, items, total);
+        }
+
         if (response.ok && response.order) {
-            setOrders(prev => [response.order, ...prev]);
+            // Optimistically update local state to avoid refresh delay
+            // But verify if we need to hydrate restaurant info
+            const fullOrder = { 
+                ...response.order,
+                restaurants: restaurants.find(r => r.id === restaurantId)
+            };
+            setOrders(prev => [fullOrder, ...prev]);
             clearCart();
             return response;
         }
@@ -281,7 +333,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const markOrderPaid = async (orderId: string) => {
       try {
          await apiMarkPaid(orderId);
-         // UI update handled by realtime or optimistic
          setOrders(prev => prev.map(o => o.id === orderId ? { ...o, paid: true } : o));
       } catch (e) { console.error(e); alert("Failed to mark paid"); }
   };
@@ -333,27 +384,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // --- System Config Logic ---
   const toggleTestMode = async () => {
     try {
-        // 1. Fetch current config row
         const { data: existing } = await supabase.from('restaurants').select('*').eq('name', CONFIG_REST_NAME).single();
-        
         const newStatus = !isTestMode;
 
         if (!existing) {
-            // Create Config Row if missing
-            
-            // HACK: To bypass FK constraints on owner_id if we are using a fake admin account,
-            // we try to find a real user ID from the profiles table to assign this row to.
-            // If the user is logging in via bypass, 'user.id' is 'master-admin-bypass', which doesn't exist in auth.users.
             let ownerId = user?.id;
-            
             if (user?.id === 'master-admin-bypass') {
                 const { data: profiles } = await supabase.from('profiles').select('id').limit(1);
-                if (profiles && profiles.length > 0) {
-                    ownerId = profiles[0].id;
-                } else {
-                    // Fallback, might fail FK if no users exist
-                    console.warn("No real users found to assign config row ownership. DB Write might fail.");
-                }
+                if (profiles && profiles.length > 0) ownerId = profiles[0].id;
             }
 
             const { error } = await supabase.from('restaurants').insert([{
@@ -361,27 +399,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 name: CONFIG_REST_NAME,
                 payment_method: 'upi',
                 verified: false,
-                banned: newStatus // Use banned col as the toggle
+                banned: newStatus 
             }]);
-            
             if (error) throw error;
-
         } else {
-            // Update existing
             const { error } = await supabase.from('restaurants').update({ banned: newStatus }).eq('id', existing.id);
             if (error) throw error;
         }
 
-        // Optimistic update
         setIsTestMode(newStatus);
-        
-        // Refresh to ensure sync
         await refreshRestaurants(true);
     } catch (e: any) {
         console.error("Failed to toggle Test Mode:", e);
-        // Alert the user so they know why it reverted
-        alert("Failed to save Test Mode state. \n\nThis usually happens if you are in Admin Bypass mode but the database requires a real user for Foreign Key constraints. \n\nError: " + (e.message || "Permissions/Network error"));
-        // Revert state by refreshing from source of truth
+        alert("Failed to save Test Mode state. Error: " + (e.message));
         refreshRestaurants(true);
     }
   };
