@@ -17,11 +17,12 @@ import {
   Bell,
   Hash,
   Camera,
-  Edit2
+  Edit2,
+  Star
 } from 'lucide-react';
 
 const RestaurantDashboard: React.FC = () => {
-  const { user, menu, setMenu, addMenuItem, deleteMenuItem, orders, updateOrderStatus, verifyOrderPickup, logout, restaurants, updateRestaurantImage } = useApp();
+  const { user, menu, setMenu, addMenuItem, deleteMenuItem, orders, updateOrderStatus, verifyOrderPickup, logout, restaurants, updateRestaurantImage, getRestaurantStats } = useApp();
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders');
   
   // Menu State
@@ -37,6 +38,9 @@ const RestaurantDashboard: React.FC = () => {
   const restaurantOrders = orders.filter(o => o.restaurantId === user?.restaurantId);
   const restaurantMenu = menu.filter(m => m.restaurantId === user?.restaurantId);
   const currentRestaurant = restaurants.find(r => r.id === user?.restaurantId);
+  
+  // Rating Stats
+  const stats = user?.restaurantId ? getRestaurantStats(user.restaurantId) : { averageRating: 0, reviewCount: 0 };
 
   // Notification Permission Popup
   const [showNotifPermission, setShowNotifPermission] = useState(false);
@@ -407,8 +411,15 @@ const RestaurantDashboard: React.FC = () => {
                         <ChefHat className="w-6 h-6 text-orange-400" />
                     </div>
                     <div>
-                        <h1 className="text-xl font-bold">{user?.name}</h1>
-                        <p className="text-slate-400 text-sm">Admin Dashboard</p>
+                        <div className="flex items-center gap-2">
+                             <h1 className="text-xl font-bold">{user?.name}</h1>
+                             <div className="flex items-center gap-1 bg-white/10 px-2 py-0.5 rounded-full">
+                                <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+                                <span className="text-xs font-bold">{stats.averageRating.toFixed(1)}</span>
+                                <span className="text-[10px] text-slate-300">({stats.reviewCount})</span>
+                             </div>
+                        </div>
+                        <p className="text-slate-400 text-sm">Restaurant Dashboard</p>
                     </div>
                 </div>
                 <div className="flex gap-3">

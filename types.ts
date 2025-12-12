@@ -40,6 +40,7 @@ export interface Order {
 export interface User {
   id: string;
   name: string;
+  phoneNumber?: string; // Optional for admin, required for others usually
   role: UserRole;
   restaurantId?: string; // If role is restaurant
 }
@@ -52,4 +53,14 @@ export interface AppNotification {
   type: 'info' | 'success' | 'warning' | 'error';
   timestamp: number;
   read: boolean;
+}
+
+export interface Rating {
+  id: string;
+  restaurantId: string;
+  userId: string;
+  userName: string;
+  rating: number; // 1-5
+  comment?: string;
+  timestamp: number;
 }

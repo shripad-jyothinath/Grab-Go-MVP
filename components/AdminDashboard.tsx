@@ -9,11 +9,12 @@ import {
   ShoppingBag,
   Users,
   CheckCircle,
-  AlertTriangle
+  AlertTriangle,
+  Star
 } from 'lucide-react';
 
 const AdminDashboard: React.FC = () => {
-  const { logout, restaurants, deleteRestaurant, approveRestaurant, orders, user } = useApp();
+  const { logout, restaurants, deleteRestaurant, approveRestaurant, orders, user, getRestaurantStats } = useApp();
 
   const totalRevenue = orders.reduce((sum, order) => sum + order.totalAmount, 0);
   const totalOrders = orders.length;
@@ -140,18 +141,21 @@ const AdminDashboard: React.FC = () => {
                 <tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase tracking-wider font-semibold">
                   <th className="px-6 py-3">Restaurant Name</th>
                   <th className="px-6 py-3">Cuisine</th>
+                  <th className="px-6 py-3">Rating</th>
                   <th className="px-6 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {activeRestaurants.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="px-6 py-8 text-center text-slate-400">
+                    <td colSpan={4} className="px-6 py-8 text-center text-slate-400">
                       No active restaurants.
                     </td>
                   </tr>
                 ) : (
-                  activeRestaurants.map((restaurant) => (
+                  activeRestaurants.map((restaurant) => {
+                    const stats = getRestaurantStats(restaurant.id);
+                    return (
                     <tr key={restaurant.id} className="hover:bg-slate-50 transition">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -163,6 +167,13 @@ const AdminDashboard: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
                         {restaurant.cuisine}
+                      </td>
+                      <td className="px-6 py-4">
+                          <div className="flex items-center gap-1">
+                              <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
+                              <span className="text-sm font-bold text-slate-700">{stats.averageRating.toFixed(1)}</span>
+                              <span className="text-xs text-slate-400">({stats.reviewCount})</span>
+                          </div>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button
@@ -178,7 +189,7 @@ const AdminDashboard: React.FC = () => {
                         </button>
                       </td>
                     </tr>
-                  ))
+                  )})
                 )}
               </tbody>
             </table>

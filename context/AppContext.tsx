@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, MenuItem, Order, UserRole, CartItem, Restaurant, AppNotification } from '../types';
+import { User, MenuItem, Order, UserRole, CartItem, Restaurant, AppNotification, Rating } from '../types';
 
 interface AppContextType {
   user: User | null;
-  login: (name: string, password: string) => Promise<{ success: boolean; message?: string }>;
-  signup: (name: string, password: string, role: UserRole, extraData?: any) => Promise<{ success: boolean; message?: string }>;
+  login: (identifier: string, password: string) => Promise<{ success: boolean; message?: string }>;
+  signup: (username: string, phoneNumber: string, password: string, role: UserRole, extraData?: any) => Promise<{ success: boolean; message?: string }>;
+  checkPhoneAvailable: (phone: string) => boolean;
+  sendVerificationOTP: (phone: string) => Promise<string>;
   logout: () => void;
   restaurants: Restaurant[];
   updateRestaurantImage: (url: string) => void;
@@ -25,6 +27,9 @@ interface AppContextType {
   updateCartQuantity: (itemId: string, delta: number) => void;
   notifications: AppNotification[];
   markNotificationRead: (id: string) => void;
+  ratings: Rating[];
+  addRating: (restaurantId: string, rating: number, comment: string) => void;
+  getRestaurantStats: (restaurantId: string) => { averageRating: number; reviewCount: number };
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -44,11 +49,18 @@ const INITIAL_MENU: MenuItem[] = [
 ];
 
 // Mock Users for existing restaurants so they can login. Default password '1234'
+// Added mock phone numbers
 const INITIAL_USERS = [
-  { username: 'Campus Grill', password: 'password', role: 'restaurant', relatedId: 'r1' },
-  { username: 'Green Leaf', password: 'password', role: 'restaurant', relatedId: 'r2' },
-  { username: 'Bean There', password: 'password', role: 'restaurant', relatedId: 'r3' },
-  { username: 'Student', password: 'password', role: 'student', relatedId: 's1' },
+  { username: 'Campus Grill', phoneNumber: '5550000001', password: 'password', role: 'restaurant', relatedId: 'r1' },
+  { username: 'Green Leaf', phoneNumber: '5550000002', password: 'password', role: 'restaurant', relatedId: 'r2' },
+  { username: 'Bean There', phoneNumber: '5550000003', password: 'password', role: 'restaurant', relatedId: 'r3' },
+  { username: 'Student', phoneNumber: '5550000004', password: 'password', role: 'student', relatedId: 's1' },
+];
+
+const INITIAL_RATINGS: Rating[] = [
+  { id: 'rat1', restaurantId: 'r1', userId: 's1', userName: 'Student', rating: 4, comment: 'Great burgers!', timestamp: Date.now() },
+  { id: 'rat2', restaurantId: 'r1', userId: 's99', userName: 'Jane', rating: 5, comment: 'Amazing!', timestamp: Date.now() },
+  { id: 'rat3', restaurantId: 'r2', userId: 's1', userName: 'Student', rating: 5, comment: 'Super fresh.', timestamp: Date.now() }
 ];
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -77,6 +89,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return saved ? JSON.parse(saved) : INITIAL_USERS;
   });
 
+  const [ratings, setRatings] = useState<Rating[]>(() => {
+      const saved = localStorage.getItem('cc_ratings');
+      return saved ? JSON.parse(saved) : INITIAL_RATINGS;
+  });
+
   const [cart, setCart] = useState<CartItem[]>([]);
   
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -86,6 +103,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => { localStorage.setItem('cc_menu', JSON.stringify(menu)); }, [menu]);
   useEffect(() => { localStorage.setItem('cc_orders', JSON.stringify(orders)); }, [orders]);
   useEffect(() => { localStorage.setItem('cc_users', JSON.stringify(registeredUsers)); }, [registeredUsers]);
+  useEffect(() => { localStorage.setItem('cc_ratings', JSON.stringify(ratings)); }, [ratings]);
+
 
   // --- Order Watcher (30 min warning) ---
   useEffect(() => {
@@ -138,13 +157,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // --- Auth Actions ---
-  const login = async (username: string, password: string): Promise<{ success: boolean; message?: string }> => {
-    if (username === 'Admin' && password === 'hasini20') {
+  const checkPhoneAvailable = (phone: string): boolean => {
+    return !registeredUsers.some(u => u.phoneNumber === phone);
+  };
+
+  const sendVerificationOTP = async (phone: string): Promise<string> => {
+    // Simulate API call delay
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    // Generate 4 digit code
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    return code;
+  };
+
+  const login = async (identifier: string, password: string): Promise<{ success: boolean; message?: string }> => {
+    // Admin Override
+    if (identifier === 'Admin' && password === 'hasini20') {
       setUser({ id: 'admin', name: 'Administrator', role: 'admin' });
       return { success: true };
     }
 
-    const foundUser = registeredUsers.find(u => u.username.toLowerCase() === username.toLowerCase());
+    // Search by username OR phone number
+    const foundUser = registeredUsers.find(u => 
+      u.username.toLowerCase() === identifier.toLowerCase() || 
+      u.phoneNumber === identifier
+    );
     
     if (!foundUser) {
       return { success: false, message: 'User not found.' };
@@ -165,6 +201,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setUser({
       id: foundUser.relatedId || Date.now().toString(),
       name: foundUser.username,
+      phoneNumber: foundUser.phoneNumber,
       role: foundUser.role as UserRole,
       restaurantId: foundUser.role === 'restaurant' ? foundUser.relatedId : undefined
     });
@@ -172,9 +209,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true };
   };
 
-  const signup = async (username: string, password: string, role: UserRole, extraData?: any): Promise<{ success: boolean; message?: string }> => {
+  const signup = async (username: string, phoneNumber: string, password: string, role: UserRole, extraData?: any): Promise<{ success: boolean; message?: string }> => {
+    // Double check unique constraint
     if (registeredUsers.some(u => u.username.toLowerCase() === username.toLowerCase())) {
       return { success: false, message: 'Username already taken.' };
+    }
+    if (registeredUsers.some(u => u.phoneNumber === phoneNumber)) {
+      return { success: false, message: 'Phone number already registered.' };
     }
 
     let relatedId = Math.random().toString(36).substr(2, 9);
@@ -190,7 +231,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setRestaurants(prev => [...prev, newRestaurant]);
     }
 
-    const newUser = { username, password, role, relatedId };
+    const newUser = { username, phoneNumber, password, role, relatedId };
     setRegisteredUsers(prev => [...prev, newUser]);
 
     // Do NOT auto login for restaurants now, as they need approval
@@ -201,6 +242,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setUser({
       id: relatedId,
       name: username,
+      phoneNumber: phoneNumber,
       role: role,
       restaurantId: undefined
     });
@@ -338,14 +380,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const clearCart = () => setCart([]);
 
+  // --- Rating Actions ---
+  const addRating = (restaurantId: string, rating: number, comment: string) => {
+     if (!user) return;
+     const newRating: Rating = {
+         id: Math.random().toString(36).substr(2, 9),
+         restaurantId,
+         userId: user.id,
+         userName: user.name,
+         rating,
+         comment,
+         timestamp: Date.now()
+     };
+     setRatings(prev => [newRating, ...prev]);
+     addNotification(user.name, 'Thanks for your review!', 'success');
+  };
+
+  const getRestaurantStats = (restaurantId: string) => {
+     const rRatings = ratings.filter(r => r.restaurantId === restaurantId);
+     const count = rRatings.length;
+     const averageRating = count > 0 
+        ? rRatings.reduce((acc, curr) => acc + curr.rating, 0) / count 
+        : 0;
+     return { averageRating, reviewCount: count };
+  };
+
   return (
     <AppContext.Provider value={{
-      user, login, signup, logout,
+      user, login, signup, logout, checkPhoneAvailable, sendVerificationOTP,
       restaurants, deleteRestaurant, approveRestaurant, updateRestaurantImage,
       menu, addMenuItem, setMenu, deleteMenuItem,
       orders, placeOrder, updateOrderStatus, verifyOrderPickup,
       cart, addToCart, removeFromCart, clearCart, updateCartQuantity,
-      notifications, markNotificationRead
+      notifications, markNotificationRead,
+      ratings, addRating, getRestaurantStats
     }}>
       {children}
     </AppContext.Provider>

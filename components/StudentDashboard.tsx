@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { MenuItem, Restaurant } from '../types';
-import { ShoppingBag, Search, Plus, Minus, Clock, CheckCircle2, Hash, ArrowLeft, Store, ArrowRight, Zap, Bell, X } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, Clock, CheckCircle2, Hash, ArrowLeft, Store, ArrowRight, Zap, Bell, X, Star, MessageSquare } from 'lucide-react';
 
 const StudentDashboard: React.FC = () => {
-  const { menu, addToCart, cart, removeFromCart, updateCartQuantity, clearCart, placeOrder, logout, user, orders, restaurants, notifications, markNotificationRead } = useApp();
+  const { menu, addToCart, cart, removeFromCart, updateCartQuantity, clearCart, placeOrder, logout, user, orders, restaurants, notifications, markNotificationRead, getRestaurantStats, addRating } = useApp();
   
   // State
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
@@ -14,6 +14,11 @@ const StudentDashboard: React.FC = () => {
   const [pickupTime, setPickupTime] = useState('12:00');
   const [orderMode, setOrderMode] = useState<'asap' | 'scheduled'>('asap');
   const [showNotifPermission, setShowNotifPermission] = useState(false);
+
+  // Rating Modal State
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [ratingValue, setRatingValue] = useState(5);
+  const [ratingComment, setRatingComment] = useState('');
 
   // Notifications for current user
   const myNotifications = notifications.filter(n => n.userId === user?.id && !n.read);
@@ -78,6 +83,15 @@ const StudentDashboard: React.FC = () => {
   const handleBackToRestaurants = () => {
     setSelectedRestaurant(null);
   }
+  
+  const submitRating = () => {
+      if (selectedRestaurant) {
+          addRating(selectedRestaurant.id, ratingValue, ratingComment);
+          setShowRatingModal(false);
+          setRatingComment('');
+          setRatingValue(5);
+      }
+  };
 
   const myActiveOrders = orders.filter(o => o.studentName === user?.name && o.status !== 'completed' && o.status !== 'declined' && o.status !== 'cancelled');
 
@@ -307,7 +321,9 @@ const StudentDashboard: React.FC = () => {
                </div>
            ) : (
                <div className="grid gap-4">
-                 {approvedRestaurants.map(restaurant => (
+                 {approvedRestaurants.map(restaurant => {
+                   const stats = getRestaurantStats(restaurant.id);
+                   return (
                    <button 
                      key={restaurant.id}
                      onClick={() => handleRestaurantSelect(restaurant)}
@@ -316,9 +332,18 @@ const StudentDashboard: React.FC = () => {
                      <div className="h-32 w-full bg-slate-200 relative">
                        <img src={restaurant.image} alt={restaurant.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-                       <div className="absolute bottom-3 left-3 text-white">
-                         <h3 className="font-bold text-lg">{restaurant.name}</h3>
-                         <p className="text-xs opacity-90">{restaurant.cuisine}</p>
+                       <div className="absolute bottom-3 left-3 text-white w-full pr-6">
+                         <div className="flex justify-between items-end">
+                            <div>
+                                <h3 className="font-bold text-lg">{restaurant.name}</h3>
+                                <p className="text-xs opacity-90">{restaurant.cuisine}</p>
+                            </div>
+                            <div className="flex items-center gap-1 bg-black/30 backdrop-blur-md px-2 py-1 rounded-lg">
+                                <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+                                <span className="text-xs font-bold">{stats.averageRating.toFixed(1)}</span>
+                                <span className="text-[10px] opacity-70">({stats.reviewCount})</span>
+                            </div>
+                         </div>
                        </div>
                      </div>
                      <div className="p-3 flex justify-between items-center">
@@ -328,7 +353,7 @@ const StudentDashboard: React.FC = () => {
                         </div>
                      </div>
                    </button>
-                 ))}
+                 )})}
                </div>
            )}
         </div>
@@ -338,7 +363,51 @@ const StudentDashboard: React.FC = () => {
 
   // --- Menu View ---
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div className="min-h-screen bg-slate-50 pb-20 relative">
+      
+      {/* Rating Modal */}
+      {showRatingModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in">
+              <div className="bg-white rounded-2xl p-6 w-full max-w-sm relative">
+                  <button onClick={() => setShowRatingModal(false)} className="absolute top-4 right-4 text-slate-400">
+                      <X className="w-6 h-6" />
+                  </button>
+                  
+                  <h3 className="text-xl font-bold text-center mb-2">Rate {selectedRestaurant?.name}</h3>
+                  <p className="text-slate-500 text-center text-sm mb-6">How was your food?</p>
+                  
+                  <div className="flex justify-center gap-2 mb-6">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                          <button 
+                            key={star} 
+                            onClick={() => setRatingValue(star)}
+                            className="transition transform active:scale-110"
+                          >
+                              <Star 
+                                className={`w-10 h-10 ${star <= ratingValue ? 'text-yellow-400 fill-yellow-400' : 'text-slate-200 fill-slate-200'}`} 
+                              />
+                          </button>
+                      ))}
+                  </div>
+                  
+                  <textarea 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-orange-500 outline-none mb-4"
+                    rows={3}
+                    placeholder="Leave a comment (optional)..."
+                    value={ratingComment}
+                    onChange={(e) => setRatingComment(e.target.value)}
+                  />
+                  
+                  <button 
+                    onClick={submitRating}
+                    className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-orange-200"
+                  >
+                      Submit Review
+                  </button>
+              </div>
+          </div>
+      )}
+
       {/* Header Image */}
       <div className="h-48 relative">
          <img src={selectedRestaurant?.image} alt={selectedRestaurant?.name} className="w-full h-full object-cover" />
@@ -349,9 +418,26 @@ const StudentDashboard: React.FC = () => {
          >
             <ArrowLeft className="w-5 h-5" />
          </button>
+         
+         {/* Rate Button */}
+         <button 
+            onClick={() => setShowRatingModal(true)}
+            className="absolute top-4 right-4 bg-white/20 backdrop-blur-md px-3 py-1.5 rounded-full text-white hover:bg-white/30 transition flex items-center gap-1.5"
+         >
+             <Star className="w-4 h-4 fill-white" />
+             <span className="text-xs font-bold">Rate</span>
+         </button>
+
          <div className="absolute bottom-4 left-4 text-white">
             <h1 className="text-2xl font-bold">{selectedRestaurant?.name}</h1>
-            <p className="text-sm opacity-90">{selectedRestaurant?.cuisine}</p>
+            <div className="flex items-center gap-2">
+                <p className="text-sm opacity-90">{selectedRestaurant?.cuisine}</p>
+                <div className="w-1 h-1 bg-white rounded-full opacity-50"></div>
+                <div className="flex items-center text-yellow-400 text-sm font-bold">
+                    <Star className="w-3 h-3 fill-yellow-400 mr-1" />
+                    {selectedRestaurant ? getRestaurantStats(selectedRestaurant.id).averageRating.toFixed(1) : '0.0'}
+                </div>
+            </div>
          </div>
       </div>
 

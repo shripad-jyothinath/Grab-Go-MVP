@@ -1,19 +1,26 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { UserRole } from '../types';
-import { ChefHat, GraduationCap, ArrowRight, AlertCircle, Lock, User, LogIn, UserPlus, Store, MessageCircle } from 'lucide-react';
+import { ChefHat, GraduationCap, ArrowRight, AlertCircle, Lock, User, LogIn, UserPlus, Store, MessageCircle, Phone, Smartphone, ShieldCheck, Loader2 } from 'lucide-react';
 
 const Login: React.FC = () => {
-  const { login, signup } = useApp();
+  const { login, signup, checkPhoneAvailable, sendVerificationOTP } = useApp();
   
   // Tabs: 'signin' | 'signup'
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  // Signup Step: 'details' | 'otp'
+  const [signupStep, setSignupStep] = useState<'details' | 'otp'>('details');
   
   // Form State
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(''); // Serves as identifier in login
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>('student');
   const [cuisine, setCuisine] = useState(''); // Only for restaurant signup
+  
+  // OTP State
+  const [generatedOTP, setGeneratedOTP] = useState('');
+  const [enteredOTP, setEnteredOTP] = useState('');
   
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState(''); // For pending approval
@@ -22,44 +29,97 @@ const Login: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setSuccessMsg('');
-    setIsLoading(true);
+    
+    if (mode === 'signin') {
+        setIsLoading(true);
+        try {
+            const result = await login(username, password);
+            if (!result.success) {
+                setError(result.message || 'Login failed');
+            }
+        } catch (err) {
+            setError('An unexpected error occurred.');
+        } finally {
+            setIsLoading(false);
+        }
+    } else {
+        // --- SIGN UP FLOW ---
+        if (signupStep === 'details') {
+            // Validate Details First
+            if (!username) {
+                setError('Username is required');
+                return;
+            }
+            if (password.length < 4) {
+                setError('Password must be at least 4 characters');
+                return;
+            }
+            if (!/^\d{10}$/.test(phoneNumber)) {
+                setError('Please enter a valid 10-digit phone number');
+                return;
+            }
+            
+            setIsLoading(true);
 
-    try {
-      if (mode === 'signin') {
-        const result = await login(username, password);
-        if (!result.success) {
-          setError(result.message || 'Login failed');
+            // Check if phone number is unique
+            if (!checkPhoneAvailable(phoneNumber)) {
+                setError('This phone number is already registered.');
+                setIsLoading(false);
+                return;
+            }
+
+            // Generate OTP via Context (Simulation)
+            try {
+                const otp = await sendVerificationOTP(phoneNumber);
+                setGeneratedOTP(otp);
+                setSignupStep('otp');
+                // Simulate the device receiving it
+                alert(`[SMS/WhatsApp Verification Simulation]\n\nSent to: ${phoneNumber}\nYour verification code is: ${otp}`);
+            } catch (e) {
+                setError("Failed to send verification code. Please try again.");
+            } finally {
+                setIsLoading(false);
+            }
+
+        } else {
+            // Verify OTP and Register
+            if (enteredOTP !== generatedOTP) {
+                setError('Invalid OTP code. Please try again.');
+                return;
+            }
+
+            setIsLoading(true);
+            try {
+                const extraData = role === 'restaurant' ? { cuisine } : undefined;
+                const result = await signup(username, phoneNumber, password, role, extraData);
+                
+                if (!result.success) {
+                    setError(result.message || 'Sign up failed');
+                    // If failed (maybe race condition), go back to details
+                    if (result.message?.includes('taken') || result.message?.includes('registered')) {
+                        setSignupStep('details');
+                    }
+                } else if (result.message === 'PENDING_APPROVAL') {
+                    setSuccessMsg('approval_needed');
+                }
+            } catch (err) {
+                setError('Registration failed.');
+            } finally {
+                setIsLoading(false);
+            }
         }
-      } else {
-        // Validation
-        if (password.length < 4) {
-          setError('Password must be at least 4 characters');
-          setIsLoading(false);
-          return;
-        }
-        
-        const extraData = role === 'restaurant' ? { cuisine } : undefined;
-        const result = await signup(username, password, role, extraData);
-        if (!result.success) {
-          setError(result.message || 'Sign up failed');
-        } else if (result.message === 'PENDING_APPROVAL') {
-            setSuccessMsg('approval_needed');
-        }
-      }
-    } catch (err) {
-      setError('An unexpected error occurred.');
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const toggleMode = (newMode: 'signin' | 'signup') => {
     setMode(newMode);
+    setSignupStep('details');
     setError('');
     setSuccessMsg('');
     setUsername('');
     setPassword('');
+    setPhoneNumber('');
+    setEnteredOTP('');
     // Reset defaults
     if (newMode === 'signup') {
       setRole('student');
@@ -69,7 +129,7 @@ const Login: React.FC = () => {
   if (successMsg === 'approval_needed') {
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-            <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-100 text-center">
+            <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-100 text-center animate-fade-in-up">
                 <div className="w-16 h-16 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Store className="w-8 h-8" />
                 </div>
@@ -106,7 +166,7 @@ const Login: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-100 relative overflow-hidden">
+      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-100 relative overflow-hidden animate-fade-in">
         {/* Decorative Background Element */}
         <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-orange-400 to-indigo-600"></div>
 
@@ -122,136 +182,203 @@ const Login: React.FC = () => {
           <button
             type="button"
             onClick={() => toggleMode('signin')}
-            className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
+            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${
               mode === 'signin' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
-            <LogIn className="w-4 h-4" /> Sign In
+            Sign In
           </button>
           <button
             type="button"
             onClick={() => toggleMode('signup')}
-            className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
+            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${
               mode === 'signup' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
-            <UserPlus className="w-4 h-4" /> Sign Up
+            Sign Up
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        {error && (
+          <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-6 flex items-start gap-2 text-sm">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
           
-          {/* Role Selection (Only for Sign Up) */}
-          {mode === 'signup' && (
-            <div className="grid grid-cols-2 gap-4 mb-2">
-              <button
-                type="button"
-                onClick={() => setRole('student')}
-                className={`p-3 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${
-                  role === 'student'
-                    ? 'border-orange-500 bg-orange-50 text-orange-700'
-                    : 'border-slate-200 text-slate-400 hover:border-slate-300'
-                }`}
-              >
-                <GraduationCap className="w-6 h-6" />
-                <span className="font-medium text-sm">Student</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setRole('restaurant')}
-                className={`p-3 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${
-                  role === 'restaurant'
-                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                    : 'border-slate-200 text-slate-400 hover:border-slate-300'
-                }`}
-              >
-                <ChefHat className="w-6 h-6" />
-                <span className="font-medium text-sm">Restaurant</span>
-              </button>
-            </div>
+          {mode === 'signin' && (
+             <div>
+                <label className="block text-slate-700 font-bold mb-2">Username or Phone Number</label>
+                <div className="flex items-center bg-slate-100 rounded-lg p-3 border border-slate-200 focus-within:ring-2 focus-within:ring-indigo-500 transition">
+                  <User className="w-5 h-5 text-slate-400 mr-3" />
+                  <input 
+                    type="text" 
+                    placeholder="e.g. johndoe or 5550123456" 
+                    className="bg-transparent border-none outline-none w-full text-slate-800 placeholder-slate-400"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                  />
+                </div>
+             </div>
           )}
 
-          {/* Inputs */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              {role === 'restaurant' && mode === 'signup' ? 'Restaurant Name' : 'Username'}
-            </label>
-            <div className="relative">
-              <User className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
-              <input
-                type="text"
-                required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition"
-                placeholder={role === 'restaurant' ? "e.g. Campus Grill" : "e.g. AlexSmith"}
-              />
-            </div>
-          </div>
-
-          {/* Cuisine Input (Only for Restaurant Signup) */}
-          {mode === 'signup' && role === 'restaurant' && (
-            <div className="animate-fade-in">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Cuisine Type</label>
-              <div className="relative">
-                <Store className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
-                <input
-                  type="text"
-                  required
-                  value={cuisine}
-                  onChange={(e) => setCuisine(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition"
-                  placeholder="e.g. Burgers, Vegan, Asian..."
-                />
+          {mode === 'signup' && signupStep === 'details' && (
+            <>
+              {/* Role Selection */}
+              <div className="grid grid-cols-2 gap-3 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setRole('student')}
+                  className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center gap-2 transition ${
+                    role === 'student' 
+                      ? 'border-orange-500 bg-orange-50 text-orange-700' 
+                      : 'border-slate-100 hover:border-slate-200 text-slate-500'
+                  }`}
+                >
+                  <GraduationCap className="w-6 h-6" />
+                  <span className="font-bold text-sm">Student</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRole('restaurant')}
+                  className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center gap-2 transition ${
+                    role === 'restaurant' 
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700' 
+                      : 'border-slate-100 hover:border-slate-200 text-slate-500'
+                  }`}
+                >
+                  <ChefHat className="w-6 h-6" />
+                  <span className="font-bold text-sm">Restaurant</span>
+                </button>
               </div>
-            </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-2">
+                    {role === 'restaurant' ? 'Restaurant Name' : 'Username'}
+                </label>
+                <div className="flex items-center bg-slate-100 rounded-lg p-3 border border-slate-200 focus-within:ring-2 focus-within:ring-indigo-500 transition">
+                  {role === 'restaurant' ? <Store className="w-5 h-5 text-slate-400 mr-3" /> : <User className="w-5 h-5 text-slate-400 mr-3" />}
+                  <input 
+                    type="text" 
+                    placeholder={role === 'restaurant' ? "Campus Grill" : "johndoe"} 
+                    className="bg-transparent border-none outline-none w-full text-slate-800 placeholder-slate-400"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-2">Phone Number <span className="text-red-500">*</span></label>
+                <div className="flex items-center bg-slate-100 rounded-lg p-3 border border-slate-200 focus-within:ring-2 focus-within:ring-indigo-500 transition">
+                  <Smartphone className="w-5 h-5 text-slate-400 mr-3" />
+                  <input 
+                    type="tel" 
+                    placeholder="10-digit mobile number" 
+                    className="bg-transparent border-none outline-none w-full text-slate-800 placeholder-slate-400"
+                    value={phoneNumber}
+                    onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '');
+                        if (val.length <= 10) setPhoneNumber(val);
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-1">We will send an OTP via SMS/WhatsApp to verify this number.</p>
+              </div>
+
+              {role === 'restaurant' && (
+                <div>
+                  <label className="block text-slate-700 font-bold mb-2">Cuisine Type</label>
+                  <div className="flex items-center bg-slate-100 rounded-lg p-3 border border-slate-200 focus-within:ring-2 focus-within:ring-indigo-500 transition">
+                    <UserPlus className="w-5 h-5 text-slate-400 mr-3" />
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Italian, Burgers, Vegan" 
+                      className="bg-transparent border-none outline-none w-full text-slate-800 placeholder-slate-400"
+                      value={cuisine}
+                      onChange={(e) => setCuisine(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
+          {mode === 'signup' && signupStep === 'otp' && (
+             <div className="text-center py-4">
+                <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                    <MessageCircle className="w-8 h-8" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 mb-2">Verify Your Number</h3>
+                <p className="text-slate-500 mb-6 text-sm">
+                    We sent a code to <span className="font-bold text-slate-800">{phoneNumber}</span> via SMS/WhatsApp.
+                </p>
+                
+                <input 
+                    type="text" 
+                    placeholder="Enter 4-digit Code" 
+                    className="w-full text-center text-2xl tracking-[0.5em] font-bold p-4 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none mb-4"
+                    maxLength={4}
+                    value={enteredOTP}
+                    onChange={(e) => setEnteredOTP(e.target.value)}
+                />
 
-          {error && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-start gap-2">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <span>{error}</span>
+                <button 
+                   type="button" 
+                   onClick={() => setSignupStep('details')}
+                   className="text-indigo-600 text-sm font-bold hover:underline"
+                >
+                   Wrong number? Go back.
+                </button>
+             </div>
+          )}
+
+          {(mode === 'signin' || signupStep === 'details') && (
+            <div>
+                <label className="block text-slate-700 font-bold mb-2">Password</label>
+                <div className="flex items-center bg-slate-100 rounded-lg p-3 border border-slate-200 focus-within:ring-2 focus-within:ring-indigo-500 transition">
+                <Lock className="w-5 h-5 text-slate-400 mr-3" />
+                <input 
+                    type="password" 
+                    placeholder="••••••••" 
+                    className="bg-transparent border-none outline-none w-full text-slate-800 placeholder-slate-400"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                />
+                </div>
             </div>
           )}
 
           <button
             type="submit"
             disabled={isLoading}
-            className={`w-full text-white font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-lg hover:shadow-xl active:scale-[0.98] ${
-                mode === 'signup' && role === 'restaurant' ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20' : 'bg-orange-600 hover:bg-orange-700 shadow-orange-500/20'
-            } disabled:opacity-70`}
+            className={`w-full font-bold py-3.5 rounded-xl shadow-lg transition active:scale-[0.98] flex items-center justify-center gap-2 ${
+              isLoading ? 'opacity-70 cursor-not-allowed' : ''
+            } ${
+              mode === 'signin' 
+                ? 'bg-slate-800 hover:bg-slate-900 text-white shadow-slate-500/20' 
+                : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-500/20'
+            }`}
           >
             {isLoading ? (
-              <span>Processing...</span>
+                <Loader2 className="w-5 h-5 animate-spin" />
+            ) : mode === 'signin' ? (
+              <>
+                <LogIn className="w-5 h-5" /> Sign In
+              </>
+            ) : signupStep === 'details' ? (
+              <>
+                <Smartphone className="w-5 h-5" /> Verify & Register
+              </>
             ) : (
               <>
-                <span>{mode === 'signin' ? 'Sign In' : 'Create Account'}</span>
-                <ArrowRight className="w-5 h-5" />
+                 <ShieldCheck className="w-5 h-5" /> Confirm OTP
               </>
             )}
           </button>
         </form>
-        
-        {mode === 'signin' && (
-            <p className="text-center text-xs text-slate-400 mt-6">
-                For Admin access, use ID: <b>Admin</b>
-            </p>
-        )}
       </div>
     </div>
   );
