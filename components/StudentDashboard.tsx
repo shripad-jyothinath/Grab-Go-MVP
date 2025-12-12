@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { MenuItem, Restaurant } from '../types';
-import { ShoppingBag, Search, Plus, Minus, Clock, CheckCircle2, Hash, ArrowLeft, Store, ArrowRight } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, Clock, CheckCircle2, Hash, ArrowLeft, Store, ArrowRight, Zap } from 'lucide-react';
 
 const StudentDashboard: React.FC = () => {
   const { menu, addToCart, cart, removeFromCart, updateCartQuantity, clearCart, placeOrder, logout, user, orders, restaurants } = useApp();
@@ -13,6 +13,7 @@ const StudentDashboard: React.FC = () => {
   const [showCart, setShowCart] = useState(false);
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [pickupTime, setPickupTime] = useState('12:00');
+  const [orderMode, setOrderMode] = useState<'asap' | 'scheduled'>('asap');
 
   // Filter menu for the selected restaurant
   const restaurantMenu = useMemo(() => {
@@ -38,7 +39,8 @@ const StudentDashboard: React.FC = () => {
 
   const handleCheckout = () => {
     if (!selectedRestaurant) return;
-    placeOrder(selectedRestaurant.id, cart, cartTotal, pickupTime);
+    const finalPickupTime = orderMode === 'asap' ? 'ASAP' : pickupTime;
+    placeOrder(selectedRestaurant.id, cart, cartTotal, finalPickupTime);
     setOrderPlaced(true);
     setShowCart(false);
     setTimeout(() => setOrderPlaced(false), 3000); // Reset toast after 3s
@@ -114,15 +116,54 @@ const StudentDashboard: React.FC = () => {
               </div>
 
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
-                <div>
-                   <label className="block text-sm font-medium text-slate-700 mb-2">Pickup Time</label>
-                   <input 
-                    type="time" 
-                    value={pickupTime}
-                    onChange={(e) => setPickupTime(e.target.value)}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white"
-                   />
+                {/* Order Type Toggle */}
+                <div className="flex bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
+                    <button
+                        onClick={() => setOrderMode('asap')}
+                        className={`flex-1 py-2 text-sm font-semibold rounded-md transition-all flex items-center justify-center gap-2 ${
+                            orderMode === 'asap' 
+                            ? 'bg-orange-100 text-orange-700 shadow-sm' 
+                            : 'text-slate-500 hover:bg-slate-50'
+                        }`}
+                    >
+                        <Zap className="w-4 h-4" />
+                        Order Now
+                    </button>
+                    <button
+                        onClick={() => setOrderMode('scheduled')}
+                        className={`flex-1 py-2 text-sm font-semibold rounded-md transition-all flex items-center justify-center gap-2 ${
+                            orderMode === 'scheduled' 
+                            ? 'bg-orange-100 text-orange-700 shadow-sm' 
+                            : 'text-slate-500 hover:bg-slate-50'
+                        }`}
+                    >
+                        <Clock className="w-4 h-4" />
+                        Schedule
+                    </button>
                 </div>
+
+                {orderMode === 'scheduled' ? (
+                    <div className="animate-fade-in">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Select Pickup Time</label>
+                        <input 
+                            type="time" 
+                            value={pickupTime}
+                            onChange={(e) => setPickupTime(e.target.value)}
+                            className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-orange-500 outline-none"
+                        />
+                    </div>
+                ) : (
+                    <div className="flex items-start gap-3 text-slate-600 bg-white p-4 rounded-lg border border-slate-200 animate-fade-in">
+                        <Zap className="w-5 h-5 text-orange-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <p className="text-sm font-medium text-slate-800">ASAP Preparation</p>
+                            <p className="text-xs text-slate-500 mt-1">
+                                The restaurant will start preparing your order immediately. 
+                                Please head to the counter once you receive the "Ready" notification.
+                            </p>
+                        </div>
+                    </div>
+                )}
               </div>
             </div>
           )}
@@ -137,9 +178,10 @@ const StudentDashboard: React.FC = () => {
                </div>
                <button
                  onClick={handleCheckout}
-                 className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-orange-500/20 active:scale-[0.98] transition"
+                 className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-orange-500/20 active:scale-[0.98] transition flex items-center justify-center gap-2"
                >
-                 Place Order
+                 {orderMode === 'asap' ? <Zap className="w-5 h-5" /> : <Clock className="w-5 h-5" />}
+                 {orderMode === 'asap' ? 'Order Instantly' : 'Schedule Pickup'}
                </button>
             </div>
           </div>
@@ -174,151 +216,4 @@ const StudentDashboard: React.FC = () => {
                     <div key={order.id} className="bg-white border-l-4 border-indigo-500 p-4 rounded-r-xl shadow-sm mb-2 flex justify-between items-center">
                        <div>
                           <p className="font-bold text-slate-800">{rName}</p>
-                          <p className="text-sm text-slate-500">{order.items.length} items • {order.status}</p>
-                       </div>
-                       <div className="bg-indigo-50 px-3 py-1 rounded text-indigo-700 font-mono font-bold">
-                          #{order.displayId}
-                       </div>
-                    </div>
-                  )
-               })}
-             </div>
-           )}
-
-           <div className="grid gap-6">
-             {restaurants.map(r => (
-               <div 
-                 key={r.id}
-                 onClick={() => handleRestaurantSelect(r)}
-                 className="bg-white rounded-2xl shadow-sm hover:shadow-md transition cursor-pointer overflow-hidden border border-slate-100 group active:scale-[0.99]"
-               >
-                 <div className="h-40 overflow-hidden relative">
-                    <img src={r.image} alt={r.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-col justify-end p-4">
-                       <h3 className="text-white text-xl font-bold">{r.name}</h3>
-                       <p className="text-white/80 text-sm">{r.cuisine}</p>
-                    </div>
-                 </div>
-                 <div className="p-4 flex justify-between items-center">
-                    <span className="text-sm text-slate-500 font-medium">View Menu</span>
-                    <div className="w-8 h-8 rounded-full bg-orange-50 text-orange-600 flex items-center justify-center group-hover:bg-orange-600 group-hover:text-white transition">
-                      <ArrowRight className="w-4 h-4" />
-                    </div>
-                 </div>
-               </div>
-             ))}
-           </div>
-        </div>
-      </div>
-    );
-  }
-
-  // --- Menu View ---
-  return (
-    <div className="min-h-screen bg-slate-50 pb-24">
-      {/* Menu Header */}
-      <header className="bg-white sticky top-0 z-10 shadow-sm">
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
-          <button onClick={handleBackToRestaurants} className="p-1 -ml-1 text-slate-500 hover:text-slate-800">
-             <ArrowLeft className="w-6 h-6" />
-          </button>
-          <div>
-             <h1 className="text-lg font-bold text-slate-800">{selectedRestaurant.name}</h1>
-             <p className="text-xs text-slate-500">{selectedRestaurant.cuisine}</p>
-          </div>
-        </div>
-        
-        <div className="px-4 py-3 space-y-3">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
-            <input
-              type="search"
-              placeholder={`Search ${selectedRestaurant.name}...`}
-              className="w-full pl-10 pr-4 py-2 bg-slate-100 border-none rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-
-          {/* Categories */}
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            {categories.map(cat => (
-              <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-                  activeCategory === cat 
-                    ? 'bg-orange-600 text-white' 
-                    : 'bg-white border border-slate-200 text-slate-600'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-        </div>
-      </header>
-
-      {/* Menu List */}
-      <div className="p-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {filteredMenu.length === 0 ? (
-           <div className="col-span-full py-10 text-center text-slate-400">
-              <p>No items found.</p>
-           </div>
-        ) : (
-          filteredMenu.map(item => (
-            <div key={item.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex justify-between gap-4 active:scale-[0.99] transition-transform">
-              <div className="flex-1">
-                <h3 className="font-bold text-slate-800 mb-1">{item.name}</h3>
-                <p className="text-xs text-slate-500 line-clamp-2 mb-2">{item.description}</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-orange-600 font-bold">${item.price.toFixed(2)}</span>
-                  <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded">{item.category}</span>
-                </div>
-              </div>
-              <div className="flex flex-col justify-end">
-                <button
-                  onClick={() => addToCart(item)}
-                  className="w-10 h-10 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center hover:bg-orange-600 hover:text-white transition-colors active:bg-orange-700"
-                >
-                  <Plus className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Sticky Cart Button */}
-      {cartItemCount > 0 && (
-        <div className="fixed bottom-0 left-0 w-full px-4 pb-8 pt-4 bg-gradient-to-t from-slate-50 to-transparent">
-          <div className="max-w-md mx-auto">
-            <button
-              onClick={() => setShowCart(true)}
-              className="w-full bg-slate-900 text-white p-4 rounded-2xl shadow-xl flex items-center justify-between hover:scale-[1.02] active:scale-[0.98] transition-transform"
-            >
-              <div className="flex items-center gap-3">
-                <div className="bg-orange-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">
-                  {cartItemCount}
-                </div>
-                <span className="font-medium">View Cart</span>
-              </div>
-              <span className="font-bold text-lg">${cartTotal.toFixed(2)}</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Order Success Toast */}
-      {orderPlaced && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-2 z-50 animate-bounce">
-          <CheckCircle2 className="w-5 h-5" />
-          Order Placed Successfully!
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default StudentDashboard;
+                          <p className="text-
