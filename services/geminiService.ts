@@ -1,10 +1,19 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Safe access helper
+// Safe access helper compatible with both Vite and standard Process env
 const getApiKey = () => {
     try {
         // @ts-ignore
-        return typeof process !== 'undefined' ? process.env.API_KEY : '';
+        if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+             // @ts-ignore
+             return import.meta.env.VITE_GEMINI_API_KEY;
+        }
+        // @ts-ignore
+        if (typeof process !== 'undefined' && process.env) {
+            // @ts-ignore
+            return process.env.API_KEY || process.env.VITE_GEMINI_API_KEY;
+        }
+        return '';
     } catch {
         return '';
     }
