@@ -24,6 +24,7 @@ interface AppContextType {
   login: (email: string, pass: string) => Promise<any>;
   signup: (email: string, pass: string, name: string, phone: string, role: Profile['role'], extra?: any) => Promise<any>;
   logout: () => Promise<void>;
+  updateProfile: (name: string, phone: string) => Promise<void>;
 
   // Data
   restaurants: Restaurant[];
@@ -49,6 +50,11 @@ interface AppContextType {
   isTestMode: boolean;
   toggleTestMode: () => Promise<void>;
 
+  // Test User Features
+  isTestUser: boolean;
+  enableTestUser: (code: string) => boolean;
+  loginAsTestRestaurant: (restaurantId: string) => Promise<void>;
+
   // Cart
   cart: CartItem[];
   addToCart: (item: MenuItem) => void;
@@ -64,10 +70,10 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 // --- Mock Data for Test Mode ---
-const TEST_RESTAURANTS: Restaurant[] = [
+export const TEST_RESTAURANTS: Restaurant[] = [
     {
         id: 'test-r1',
-        owner_id: 'test-owner',
+        owner_id: 'test-owner-1',
         name: '[TEST] Burger Joint',
         cuisine: 'Fast Food',
         verified: true,
@@ -78,7 +84,7 @@ const TEST_RESTAURANTS: Restaurant[] = [
     },
     {
         id: 'test-r2',
-        owner_id: 'test-owner',
+        owner_id: 'test-owner-2',
         name: '[TEST] Pizza Palace',
         cuisine: 'Italian',
         verified: true,
@@ -105,6 +111,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [ratings, setRatings] = useState<Rating[]>([]);
 
   const [isTestMode, setIsTestMode] = useState(false);
+  
+  // Persist Test User status in session storage
+  const [isTestUser, setIsTestUser] = useState(() => {
+      try {
+          return sessionStorage.getItem('isTestUser') === 'true';
+      } catch { return false; }
+  });
 
   // --- Initialization & Data Fetching ---
   useEffect(() => {
@@ -126,7 +139,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       await refreshRestaurants(mounted);
 
-      // 3. Fetch Menu Items (All for now, filter in UI)
+      // 3. Fetch Menu Items
       const { data: mData } = await supabase.from('menu_items').select('*');
       if (mData && mounted) setMenu(mData as any);
       
@@ -135,20 +148,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     init();
 
-    // 4. Realtime Subscription for Orders & Restaurants (to catch config changes)
+    // 4. Realtime Subscription
     const orderChannel = supabase.channel('public:orders')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-         refreshOrders(); 
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => refreshOrders())
       .subscribe();
       
-    // Subscribe to test_orders as well if needed, but for simplicity we'll just poll on mode change
-    // or rely on local state updates for test mode speed
-
     const restChannel = supabase.channel('public:restaurants')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurants' }, () => {
-         refreshRestaurants(true);
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurants' }, () => refreshRestaurants(true))
       .subscribe();
 
     const menuChannel = supabase.channel('public:menu')
@@ -166,30 +172,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, []);
 
-  // --- Notification Permission ---
-  useEffect(() => {
-    if (user) {
-        // Request notification permission when user is logged in
-        if ('Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission().then(permission => {
-                if (permission === 'granted') {
-                    console.log('Notification permission granted.');
-                }
-            });
-        }
-    }
-  }, [user]);
-
   const refreshRestaurants = async (mounted: boolean) => {
-      // Fetch Restaurants
       const { data: rData } = await supabase.from('restaurants').select('*');
       if (rData && mounted) {
-          // Check for config row
           const configRow = rData.find((r: any) => r.name === CONFIG_REST_NAME);
           const testModeActive = configRow ? configRow.banned : false;
           setIsTestMode(testModeActive);
 
-          // Add fallback images if missing from DB, and filter out config row
           let mapped = rData
             .filter((r: any) => r.name !== CONFIG_REST_NAME)
             .map((r: any) => ({
@@ -198,7 +187,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               cuisine: r.cuisine || 'Multi-Cuisine'
             }));
           
-          // Inject Test Restaurants if mode is active
           if (testModeActive) {
              mapped = [...mapped, ...TEST_RESTAURANTS];
           }
@@ -210,6 +198,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const refreshOrders = async () => {
       if (!user) return;
       
+      // If user is a simulated test owner, fetch test orders for their specific ID
+      if (user.id.startsWith('test-owner')) {
+          const { data: testData } = await supabase.from('test_orders')
+            .select('*')
+            .eq('restaurant_id', restaurant?.id)
+            .order('created_at', { ascending: false });
+          
+          if (testData) {
+              const mapped = testData.map(t => ({ 
+                  ...t, 
+                  is_test: true, 
+                  items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items // Handle potential stringification
+              }));
+              setOrders(mapped as any);
+          }
+          return;
+      }
+
       // 1. Fetch Real Orders
       let query = supabase.from('orders').select('*, profiles(name, phone)');
       
@@ -223,20 +229,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       let allOrders = realOrders ? (realOrders as any[]) : [];
 
       // 2. Fetch Test Orders if Test Mode is ON
-      // We read `isTestMode` from state, but inside useEffect it might be stale? 
-      // Safe to fetch if enabled.
-      // NOTE: We also fetch test orders if the restaurant is a test one (but restaurant state might be null if admin)
       if (isTestMode) {
           let testQuery = supabase.from('test_orders').select('*');
           
           if (user.role === 'customer') {
-             // For bypass admin customer_id is 'master-admin-bypass', for real user it's uuid. 
-             // test_orders.customer_id is text so this works.
              testQuery = testQuery.eq('customer_id', user.id);
           }
-          // If admin, we fetch all test orders to show them? Or just let them exist in backend?
-          // If restaurant_owner, they won't see test orders unless they own a test restaurant (which is virtual).
-          // Virtual restaurant owners don't log in.
 
           const { data: testData } = await testQuery.order('created_at', { ascending: false });
           
@@ -244,27 +242,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               const mappedTests = testData.map(t => ({ 
                   ...t, 
                   is_test: true,
-                  // Hydrate restaurant detail for UI since separate table lacks join
                   restaurants: restaurants.find(r => r.id === t.restaurant_id) || { name: 'Test Restaurant' }
               }));
               allOrders = [...mappedTests, ...allOrders];
           }
       }
 
-      // Sort combined
       allOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      
       setOrders(allOrders);
   };
 
   useEffect(() => {
-      // Re-fetch orders whenever user, restaurant, or TEST MODE changes
       if (user) refreshOrders();
   }, [user, restaurant, isTestMode, restaurants]);
 
-  // --- Auth ---
+  // --- Auth & Profile ---
+  const updateProfile = async (name: string, phone: string) => {
+      if (!user) return;
+      const { error } = await supabase.from('profiles').update({ name, phone }).eq('id', user.id);
+      if (error) throw new Error(error.message);
+      setUser(prev => prev ? { ...prev, name, phone } : null);
+  };
+
   const login = async (email: string, pass: string) => {
-    // 1. Admin Bypass: Skip Supabase auth/email verification for specific admin credentials
     if (checkAdminPrivileges(email, pass)) {
          const adminProfile: Profile = {
             id: 'master-admin-bypass',
@@ -277,7 +277,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
          return { data: { user: adminProfile }, error: null };
     }
 
-    // 2. Standard Login
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
     if (!error && data.session) {
          const profile = await fetchUserProfile(data.session.user.id);
@@ -299,6 +298,37 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setUser(null);
       setRestaurant(null);
       setOrders([]);
+      setCart([]);
+  };
+
+  // --- Test User & Test Restaurant Login ---
+  const enableTestUser = (code: string) => {
+      if (code === '4321') {
+          setIsTestUser(true);
+          sessionStorage.setItem('isTestUser', 'true');
+          return true;
+      }
+      return false;
+  };
+
+  const loginAsTestRestaurant = async (restaurantId: string) => {
+      const testRest = TEST_RESTAURANTS.find(r => r.id === restaurantId);
+      if (!testRest) return;
+
+      // Create a mock profile for the test owner
+      const mockOwnerProfile: Profile = {
+          id: testRest.owner_id,
+          name: 'Test Owner',
+          role: 'restaurant_owner',
+          phone: '0000000000',
+          banned: false,
+          created_at: new Date().toISOString()
+      };
+
+      setUser(mockOwnerProfile);
+      setRestaurant(testRest);
+      // Wait a tick for state to settle then fetch orders
+      setTimeout(() => refreshOrders(), 100);
   };
 
   // --- Orders ---
@@ -306,16 +336,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       try {
         let response;
         if (isTestMode) {
-             // Route to Test Table
              response = await apiCreateTestOrder(restaurantId, items, total);
         } else {
-             // Normal Flow
              response = await apiCreateOrder(restaurantId, items, total);
         }
 
         if (response.ok && response.order) {
-            // Optimistically update local state to avoid refresh delay
-            // But verify if we need to hydrate restaurant info
             const fullOrder = { 
                 ...response.order,
                 restaurants: restaurants.find(r => r.id === restaurantId)
@@ -348,17 +374,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'completed' } : o));
       } catch (e) {
           console.error(e);
-          throw e; // Bubble up for alert
+          throw e;
       }
   };
   
   // --- Menu Management ---
   const addMenuItem = async (item: Omit<MenuItem, 'id' | 'created_at'>) => {
+      // If Test Restaurant, just mock add to state (backend won't accept unauthorized insert)
+      if (restaurant?.id.startsWith('test-r')) {
+          const mockItem = { ...item, id: `test-item-${Date.now()}`, created_at: new Date().toISOString() } as MenuItem;
+          setMenu(prev => [...prev, mockItem]);
+          return;
+      }
       const newItem = await apiAddMenuItem(item);
       setMenu(prev => [...prev, newItem]);
   };
 
   const deleteMenuItem = async (id: string) => {
+      if (restaurant?.id.startsWith('test-r')) {
+           setMenu(prev => prev.filter(i => i.id !== id));
+           return;
+      }
       await apiDeleteMenuItem(id);
       setMenu(prev => prev.filter(i => i.id !== id));
   };
@@ -411,7 +447,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         await refreshRestaurants(true);
     } catch (e: any) {
         console.error("Failed to toggle Test Mode:", e);
-        alert("Failed to save Test Mode state. Error: " + (e.message));
+        alert("Failed to save Test Mode state.");
         refreshRestaurants(true);
     }
   };
@@ -435,14 +471,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   return (
     <AppContext.Provider value={{
-      user, restaurant, loading, login, signup, logout,
+      user, restaurant, loading, login, signup, logout, updateProfile,
       restaurants, menu, orders,
       placeOrder, markOrderPaid, markOrderReady, completeOrder,
       addMenuItem, deleteMenuItem,
       deleteRestaurant, approveRestaurant, getRestaurantStats,
       cart, addToCart, removeFromCart, updateCartQuantity, clearCart,
       notifications, ratings,
-      isTestMode, toggleTestMode
+      isTestMode, toggleTestMode,
+      isTestUser, enableTestUser, loginAsTestRestaurant
     }}>
       {children}
     </AppContext.Provider>

@@ -19,23 +19,50 @@ import {
   Home,
   User,
   List,
-  LogOut
+  LogOut,
+  Settings,
+  ChevronRight,
+  Save,
+  Loader2,
+  Lock
 } from 'lucide-react';
+import { TEST_RESTAURANTS } from '../context/AppContext';
 
 const StudentDashboard: React.FC = () => {
-  const { user, logout, restaurants, menu, cart, addToCart, removeFromCart, updateCartQuantity, placeOrder, clearCart, orders, isTestMode } = useApp();
+  const { 
+      user, logout, updateProfile, 
+      restaurants, menu, cart, 
+      addToCart, updateCartQuantity, placeOrder, clearCart, 
+      orders, isTestMode, isTestUser, enableTestUser, loginAsTestRestaurant 
+  } = useApp();
   
   const [activeTab, setActiveTab] = useState<'home' | 'orders' | 'cart' | 'profile'>('home');
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
-  const [lastOrder, setLastOrder] = useState<any>(null); // For showing confirmation
+  const [lastOrder, setLastOrder] = useState<any>(null); 
+  
+  // Settings State
+  const [showSettings, setShowSettings] = useState(false);
+  const [editName, setEditName] = useState(user?.name || '');
+  const [editPhone, setEditPhone] = useState(user?.phone || '');
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // Test User Activation State
+  const [tapCount, setTapCount] = useState(0);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinCode, setPinCode] = useState('');
 
   // --- Logic ---
   const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled');
   const cartTotal = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
 
   const handleCheckout = async () => {
+      // Check for Test Mode restriction
+      if (isTestMode && !isTestUser) {
+          alert("Maintenance Mode Active. Ordering is currently disabled.");
+          return;
+      }
+
       if (!selectedRestaurant) {
-          // If trying to checkout from global cart tab, find the restaurant from the first item
           const firstItem = cart[0];
           if(!firstItem) return;
           const rest = restaurants.find(r => r.id === firstItem.restaurant_id);
@@ -57,7 +84,6 @@ const StudentDashboard: React.FC = () => {
                   ...response.order, 
                   restaurant: rest 
               });
-              // Reset navigation
               setSelectedRestaurant(null);
               setActiveTab('home');
           }
@@ -65,6 +91,42 @@ const StudentDashboard: React.FC = () => {
           alert("Order failed. Please try again.");
       }
   }
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setIsSaving(true);
+      try {
+          await updateProfile(editName, editPhone);
+          alert("Profile updated!");
+          setShowSettings(false);
+      } catch (e) {
+          alert("Failed to update profile.");
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  const handleVersionTap = () => {
+      if (isTestUser) return;
+      const newCount = tapCount + 1;
+      setTapCount(newCount);
+      if (newCount === 5) {
+          setShowPinModal(true);
+          setTapCount(0);
+      }
+  };
+
+  const handlePinSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (enableTestUser(pinCode)) {
+          alert("Test User Mode Activated!");
+          setShowPinModal(false);
+          setPinCode('');
+      } else {
+          alert("Invalid PIN");
+          setPinCode('');
+      }
+  };
 
   const buildUpiLink = (orderId: string, pickupCode: string, total: number, rest: Restaurant) => {
       if (!rest.upi_id) return '#';
@@ -81,7 +143,6 @@ const StudentDashboard: React.FC = () => {
 
   // --- Renderers ---
   
-  // 1. Order Confirmation (Payment) Overlay
   if (lastOrder) {
       const isRazorpay = lastOrder.restaurant.payment_method === 'razorpay';
       const upiLink = !isRazorpay ? buildUpiLink(lastOrder.displayId || lastOrder.id.substr(0,4), lastOrder.pickup_code, lastOrder.total, lastOrder.restaurant) : '';
@@ -107,33 +168,6 @@ const StudentDashboard: React.FC = () => {
                       <p className="text-3xl font-bold text-slate-900">₹{lastOrder.total.toFixed(2)}</p>
                   </div>
 
-                  {lastOrder.is_test ? (
-                      <div className="text-center text-sm text-slate-500">
-                          <p>This is a test order. No payment required.</p>
-                      </div>
-                  ) : (
-                      isRazorpay ? (
-                          <button className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl mb-4">
-                              Pay with Razorpay
-                          </button>
-                      ) : (
-                          <div className="space-y-4">
-                              <p className="text-sm text-slate-500">Scan to pay via UPI</p>
-                              <div className="bg-white p-2 inline-block rounded-xl border border-slate-100 shadow-sm">
-                                  <img 
-                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(upiLink)}`} 
-                                    alt="UPI QR" 
-                                    className="w-40 h-40 mix-blend-multiply" 
-                                  />
-                              </div>
-                              <a href={upiLink} className="block w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 rounded-xl">
-                                  Pay via UPI App
-                              </a>
-                              <p className="text-xs text-slate-400">The note is pre-filled with your Order ID & Pickup Code.</p>
-                          </div>
-                      )
-                  )}
-
                   <button onClick={() => setLastOrder(null)} className="mt-6 text-slate-500 font-medium hover:text-slate-800">
                       Close & View Status
                   </button>
@@ -142,7 +176,116 @@ const StudentDashboard: React.FC = () => {
       );
   }
 
-  // 2. Menu View (Sub-view of Home)
+  // Settings View
+  if (showSettings) {
+      return (
+          <div className="min-h-screen bg-slate-50 pb-24 relative">
+              <header className="bg-white p-4 sticky top-0 z-10 shadow-sm flex items-center gap-4">
+                 <button onClick={() => setShowSettings(false)} className="p-2 -ml-2 rounded-full hover:bg-slate-100">
+                     <ArrowLeft className="w-6 h-6 text-slate-700" />
+                 </button>
+                 <h1 className="font-bold text-xl text-slate-800">Settings</h1>
+              </header>
+
+              <div className="p-4 space-y-6">
+                  {/* Profile Edit */}
+                  <form onSubmit={handleSaveProfile} className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                      <h2 className="font-bold text-lg mb-4 flex items-center gap-2">
+                          <User className="w-5 h-5 text-slate-500" /> Personal Info
+                      </h2>
+                      <div className="space-y-4">
+                          <div>
+                              <label className="text-xs font-bold text-slate-500 uppercase">Full Name</label>
+                              <input 
+                                className="w-full border-b border-slate-200 py-2 outline-none focus:border-indigo-500" 
+                                value={editName}
+                                onChange={e => setEditName(e.target.value)}
+                              />
+                          </div>
+                          <div>
+                              <label className="text-xs font-bold text-slate-500 uppercase">Phone Number</label>
+                              <input 
+                                type="tel"
+                                className="w-full border-b border-slate-200 py-2 outline-none focus:border-indigo-500" 
+                                value={editPhone}
+                                onChange={e => setEditPhone(e.target.value)}
+                              />
+                          </div>
+                          <button disabled={isSaving} type="submit" className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2">
+                              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Changes
+                          </button>
+                      </div>
+                  </form>
+
+                  {/* Test Mode Control Panel (Only for Test Users) */}
+                  {isTestUser && (
+                      <div className="bg-yellow-50 p-6 rounded-xl shadow-sm border border-yellow-200 animate-fade-in">
+                          <h2 className="font-bold text-lg mb-2 flex items-center gap-2 text-yellow-800">
+                              <Zap className="w-5 h-5 fill-yellow-600 text-yellow-800" /> Test Mode Active
+                          </h2>
+                          <p className="text-xs text-yellow-700 mb-4">
+                              You can order during maintenance and log in as test restaurants without passwords.
+                          </p>
+                          
+                          <h3 className="font-bold text-sm text-yellow-800 mb-2">Simulate Login:</h3>
+                          <div className="space-y-2">
+                              {TEST_RESTAURANTS.map(tr => (
+                                  <button 
+                                    key={tr.id}
+                                    onClick={() => loginAsTestRestaurant(tr.id)}
+                                    className="w-full bg-white text-yellow-800 border border-yellow-200 py-3 px-4 rounded-lg flex justify-between items-center text-sm font-bold shadow-sm"
+                                  >
+                                      <span>Login as {tr.name}</span>
+                                      <ChevronRight className="w-4 h-4" />
+                                  </button>
+                              ))}
+                          </div>
+                      </div>
+                  )}
+
+                  {/* App Version / Hidden Trigger */}
+                  <div className="pt-10 text-center pb-10">
+                      <button 
+                        onClick={handleVersionTap}
+                        className="text-xs text-slate-400 font-medium focus:outline-none select-none"
+                      >
+                          Grab&Go App Version 1.0.2 <br />
+                          Build 2024.10.25
+                      </button>
+                  </div>
+              </div>
+
+              {/* PIN Modal */}
+              {showPinModal && (
+                  <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6">
+                      <div className="bg-white w-full max-w-sm p-6 rounded-2xl shadow-xl">
+                          <div className="flex justify-between items-center mb-4">
+                              <h3 className="font-bold text-lg">Enter Test Code</h3>
+                              <button onClick={() => setShowPinModal(false)}><X className="w-5 h-5" /></button>
+                          </div>
+                          <form onSubmit={handlePinSubmit}>
+                              <input 
+                                type="password" 
+                                pattern="[0-9]*" 
+                                inputMode="numeric"
+                                maxLength={4}
+                                autoFocus
+                                className="w-full text-center text-3xl tracking-widest border border-slate-300 rounded-xl py-3 mb-4"
+                                value={pinCode}
+                                onChange={e => setPinCode(e.target.value)}
+                              />
+                              <button type="submit" className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl">
+                                  Unlock
+                              </button>
+                          </form>
+                      </div>
+                  </div>
+              )}
+          </div>
+      );
+  }
+
+  // Menu View (Sub-view of Home)
   if (selectedRestaurant) {
     const restaurantItems = menu.filter(m => m.restaurant_id === selectedRestaurant.id);
     return (
@@ -178,7 +321,6 @@ const StudentDashboard: React.FC = () => {
                 ))}
             </div>
 
-            {/* Floating Mini Cart if items in cart from this restaurant */}
             {cart.length > 0 && cart[0].restaurant_id === selectedRestaurant.id && (
               <div className="fixed bottom-6 left-0 right-0 px-4 z-40">
                   <button onClick={() => { setSelectedRestaurant(null); setActiveTab('cart'); }} className="w-full bg-slate-900 text-white p-4 rounded-xl shadow-xl flex justify-between items-center">
@@ -197,7 +339,6 @@ const StudentDashboard: React.FC = () => {
   // --- Main Render (Tab Views) ---
   return (
       <div className="min-h-screen bg-slate-50 pb-24">
-          {/* Header */}
           <header className="bg-white p-4 sticky top-0 z-10 shadow-sm">
              <div className="flex justify-between items-center">
                  <h1 className="font-bold text-xl text-slate-800">Grab&Go</h1>
@@ -205,10 +346,9 @@ const StudentDashboard: React.FC = () => {
              </div>
           </header>
 
-          {/* HOME TAB: Restaurant List */}
+          {/* HOME TAB */}
           {activeTab === 'home' && (
               <div className="p-4 space-y-4">
-                  {/* Quick Active Order Link */}
                   {activeOrders.length > 0 && (
                       <button onClick={() => setActiveTab('orders')} className="w-full bg-indigo-600 text-white p-3 rounded-xl flex items-center justify-between shadow-lg shadow-indigo-200">
                           <div className="flex items-center gap-3">
@@ -285,12 +425,19 @@ const StudentDashboard: React.FC = () => {
           {activeTab === 'cart' && (
               <div className="p-4 space-y-4">
                   <h2 className="font-bold text-lg">Your Cart</h2>
-                  {isTestMode && (
-                      <div className="bg-yellow-50 p-3 rounded-xl border border-yellow-200 text-yellow-800 text-sm flex items-center gap-2">
+                  {isTestMode && !isTestUser && (
+                      <div className="bg-red-50 p-3 rounded-xl border border-red-200 text-red-800 text-sm flex items-center gap-2">
                           <AlertTriangle className="w-4 h-4" />
-                          <span>Test Mode Active. Orders are simulated.</span>
+                          <span>Maintenance Mode. Ordering Disabled.</span>
                       </div>
                   )}
+                  {isTestMode && isTestUser && (
+                      <div className="bg-yellow-50 p-3 rounded-xl border border-yellow-200 text-yellow-800 text-sm flex items-center gap-2">
+                          <Zap className="w-4 h-4" />
+                          <span>Test User Active. Maintenance Override On.</span>
+                      </div>
+                  )}
+
                   {cart.length === 0 ? (
                       <div className="text-center py-20 text-slate-400">
                           <p>Your cart is empty</p>
@@ -320,9 +467,10 @@ const StudentDashboard: React.FC = () => {
                             </div>
                             <button 
                                 onClick={handleCheckout} 
-                                className={`w-full font-bold py-4 rounded-xl bg-slate-900 text-white`}
+                                disabled={isTestMode && !isTestUser}
+                                className={`w-full font-bold py-4 rounded-xl ${isTestMode && !isTestUser ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-slate-900 text-white'}`}
                             >
-                                {isTestMode ? 'Place Test Order' : 'Confirm Order'}
+                                {isTestMode && !isTestUser ? 'Checkout Disabled' : (isTestMode ? 'Place Test Order' : 'Confirm Order')}
                             </button>
                         </div>
                       </>
@@ -334,16 +482,27 @@ const StudentDashboard: React.FC = () => {
           {activeTab === 'profile' && (
               <div className="p-4">
                   <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 text-center mb-6">
-                      <div className="w-20 h-20 bg-slate-100 rounded-full mx-auto flex items-center justify-center mb-4">
-                          <User className="w-10 h-10 text-slate-400" />
+                      <div className="w-20 h-20 bg-slate-100 rounded-full mx-auto flex items-center justify-center mb-4 text-slate-400">
+                          <User className="w-10 h-10" />
                       </div>
                       <h2 className="font-bold text-xl">{user?.name}</h2>
                       <p className="text-slate-500 text-sm">{user?.phone || 'No phone'}</p>
+                      {isTestUser && <span className="inline-block bg-yellow-100 text-yellow-800 text-[10px] font-bold px-2 py-0.5 rounded mt-2">TEST USER ACTIVE</span>}
                   </div>
                   
-                  <button onClick={logout} className="w-full bg-red-50 text-red-600 py-4 rounded-xl font-bold flex items-center justify-center gap-2">
-                      <LogOut className="w-5 h-5" /> Logout
-                  </button>
+                  <div className="space-y-3">
+                      <button onClick={() => setShowSettings(true)} className="w-full bg-white border border-slate-200 p-4 rounded-xl flex justify-between items-center group">
+                          <div className="flex items-center gap-3">
+                              <Settings className="w-5 h-5 text-slate-500" />
+                              <span className="font-bold text-slate-700">Settings</span>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-slate-500" />
+                      </button>
+
+                      <button onClick={logout} className="w-full bg-red-50 text-red-600 py-4 rounded-xl font-bold flex items-center justify-center gap-2">
+                          <LogOut className="w-5 h-5" /> Logout
+                      </button>
+                  </div>
               </div>
           )}
 
