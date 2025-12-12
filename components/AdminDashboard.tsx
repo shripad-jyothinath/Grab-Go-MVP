@@ -104,7 +104,7 @@ const AdminDashboard: React.FC = () => {
             </div>
             <div>
               <p className="text-sm text-slate-500 font-medium">Total Revenue (Live)</p>
-              <p className="text-2xl font-bold text-slate-800">${totalRevenue.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-slate-800">₹{totalRevenue.toFixed(2)}</p>
             </div>
           </div>
         </div>

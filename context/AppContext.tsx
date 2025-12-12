@@ -95,6 +95,16 @@ export const TEST_RESTAURANTS: Restaurant[] = [
     }
 ];
 
+const TEST_MENU_ITEMS: MenuItem[] = [
+    { id: 'tm-1', restaurant_id: 'test-r1', name: 'Classic Cheeseburger', description: 'Juicy beef patty with cheddar, lettuce, and tomato', price: 180, category: 'Burgers', created_at: new Date().toISOString() },
+    { id: 'tm-2', restaurant_id: 'test-r1', name: 'Spicy Chicken Burger', description: 'Crispy chicken fillet with spicy mayo', price: 200, category: 'Burgers', created_at: new Date().toISOString() },
+    { id: 'tm-3', restaurant_id: 'test-r1', name: 'Large Fries', description: 'Salted crispy golden fries', price: 120, category: 'Sides', created_at: new Date().toISOString() },
+    { id: 'tm-4', restaurant_id: 'test-r1', name: 'Coke Zero', description: 'Chilled 300ml can', price: 60, category: 'Drinks', created_at: new Date().toISOString() },
+    { id: 'tm-5', restaurant_id: 'test-r2', name: 'Margherita Pizza', description: 'Tomato sauce, mozzarella, and fresh basil', price: 350, category: 'Pizza', created_at: new Date().toISOString() },
+    { id: 'tm-6', restaurant_id: 'test-r2', name: 'Pepperoni Feast', description: 'Loaded with double pepperoni slices', price: 450, category: 'Pizza', created_at: new Date().toISOString() },
+    { id: 'tm-7', restaurant_id: 'test-r2', name: 'Garlic Breadsticks', description: 'Freshly baked with garlic butter', price: 150, category: 'Sides', created_at: new Date().toISOString() },
+];
+
 const CONFIG_REST_NAME = '__APP_CONFIG__';
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -139,9 +149,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       await refreshRestaurants(mounted);
 
-      // 3. Fetch Menu Items
-      const { data: mData } = await supabase.from('menu_items').select('*');
-      if (mData && mounted) setMenu(mData as any);
+      // Initial Menu Fetch handled by useEffect below dependent on isTestMode
       
       if (mounted) setLoading(false);
     };
@@ -158,10 +166,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       .subscribe();
 
     const menuChannel = supabase.channel('public:menu')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, async () => {
-          const { data } = await supabase.from('menu_items').select('*');
-          if (data) setMenu(data as any);
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, () => refreshMenu())
       .subscribe();
 
     return () => {
@@ -194,6 +199,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setRestaurants(mapped);
       }
   };
+
+  const refreshMenu = async () => {
+      const { data: mData } = await supabase.from('menu_items').select('*');
+      let finalMenu = mData ? (mData as any[]) : [];
+      
+      if (isTestMode) {
+          finalMenu = [...finalMenu, ...TEST_MENU_ITEMS];
+      }
+      setMenu(finalMenu);
+  };
+
+  // Re-fetch menu when Test Mode toggles to inject/remove test items
+  useEffect(() => {
+      refreshMenu();
+  }, [isTestMode]);
 
   const refreshOrders = async () => {
       if (!user) return;
