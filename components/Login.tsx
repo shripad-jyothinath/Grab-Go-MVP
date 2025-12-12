@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { UserRole } from '../types';
-import { ChefHat, GraduationCap, ArrowRight, AlertCircle, Lock, User, LogIn, UserPlus, Store } from 'lucide-react';
+import { ChefHat, GraduationCap, ArrowRight, AlertCircle, Lock, User, LogIn, UserPlus, Store, MessageCircle } from 'lucide-react';
 
 const Login: React.FC = () => {
   const { login, signup } = useApp();
@@ -16,11 +16,13 @@ const Login: React.FC = () => {
   const [cuisine, setCuisine] = useState(''); // Only for restaurant signup
   
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState(''); // For pending approval
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMsg('');
     setIsLoading(true);
 
     try {
@@ -41,6 +43,8 @@ const Login: React.FC = () => {
         const result = await signup(username, password, role, extraData);
         if (!result.success) {
           setError(result.message || 'Sign up failed');
+        } else if (result.message === 'PENDING_APPROVAL') {
+            setSuccessMsg('approval_needed');
         }
       }
     } catch (err) {
@@ -53,6 +57,7 @@ const Login: React.FC = () => {
   const toggleMode = (newMode: 'signin' | 'signup') => {
     setMode(newMode);
     setError('');
+    setSuccessMsg('');
     setUsername('');
     setPassword('');
     // Reset defaults
@@ -60,6 +65,44 @@ const Login: React.FC = () => {
       setRole('student');
     }
   };
+
+  if (successMsg === 'approval_needed') {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+            <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-100 text-center">
+                <div className="w-16 h-16 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Store className="w-8 h-8" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-800 mb-2">Registration Pending</h2>
+                <p className="text-slate-600 mb-6">
+                    Thanks for registering <b>{username}</b>! To activate your restaurant on CampusCrave, we need to verify your business.
+                </p>
+                
+                <div className="bg-green-50 border border-green-200 p-4 rounded-xl text-left mb-6">
+                    <h3 className="font-bold text-green-800 flex items-center gap-2 mb-2">
+                        <MessageCircle className="w-5 h-5" /> Next Steps:
+                    </h3>
+                    <p className="text-sm text-green-700 mb-2">
+                        1. Take a photo of your restaurant/kitchen.
+                    </p>
+                    <p className="text-sm text-green-700 mb-2">
+                        2. Send it to our Admin WhatsApp along with your Restaurant Name.
+                    </p>
+                    <p className="text-sm font-mono bg-white p-2 rounded border border-green-200 text-center mt-3 select-all">
+                        +1 (555) 012-3456
+                    </p>
+                </div>
+
+                <button 
+                    onClick={() => toggleMode('signin')}
+                    className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-lg transition"
+                >
+                    Back to Login
+                </button>
+            </div>
+        </div>
+      );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">

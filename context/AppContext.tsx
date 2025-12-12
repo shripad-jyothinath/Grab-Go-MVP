@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, MenuItem, Order, UserRole, CartItem, Restaurant } from '../types';
+import { User, MenuItem, Order, UserRole, CartItem, Restaurant, AppNotification } from '../types';
 
 interface AppContextType {
   user: User | null;
@@ -7,7 +7,9 @@ interface AppContextType {
   signup: (name: string, password: string, role: UserRole, extraData?: any) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   restaurants: Restaurant[];
+  updateRestaurantImage: (url: string) => void;
   deleteRestaurant: (id: string) => void;
+  approveRestaurant: (id: string) => void;
   menu: MenuItem[];
   addMenuItem: (item: MenuItem) => void;
   deleteMenuItem: (id: string) => void;
@@ -21,15 +23,17 @@ interface AppContextType {
   removeFromCart: (itemId: string) => void;
   clearCart: () => void;
   updateCartQuantity: (itemId: string, delta: number) => void;
+  notifications: AppNotification[];
+  markNotificationRead: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 // Initial Mock Data
 const INITIAL_RESTAURANTS: Restaurant[] = [
-  { id: 'r1', name: 'Campus Grill', cuisine: 'Burgers & American', image: 'https://images.unsplash.com/photo-1571091718767-18b5b1457add?w=800&q=80' },
-  { id: 'r2', name: 'Green Leaf', cuisine: 'Healthy & Vegan', image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800&q=80' },
-  { id: 'r3', name: 'Bean There', cuisine: 'Coffee & Pastries', image: 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800&q=80' },
+  { id: 'r1', name: 'Campus Grill', cuisine: 'Burgers & American', image: 'https://images.unsplash.com/photo-1571091718767-18b5b1457add?w=800&q=80', isApproved: true },
+  { id: 'r2', name: 'Green Leaf', cuisine: 'Healthy & Vegan', image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800&q=80', isApproved: true },
+  { id: 'r3', name: 'Bean There', cuisine: 'Coffee & Pastries', image: 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800&q=80', isApproved: true },
 ];
 
 const INITIAL_MENU: MenuItem[] = [
@@ -74,6 +78,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   });
 
   const [cart, setCart] = useState<CartItem[]>([]);
+  
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
   // --- Persistence ---
   useEffect(() => { localStorage.setItem('cc_restaurants', JSON.stringify(restaurants)); }, [restaurants]);
@@ -81,15 +87,63 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => { localStorage.setItem('cc_orders', JSON.stringify(orders)); }, [orders]);
   useEffect(() => { localStorage.setItem('cc_users', JSON.stringify(registeredUsers)); }, [registeredUsers]);
 
+  // --- Order Watcher (30 min warning) ---
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      orders.forEach(order => {
+        if (order.status === 'ready' && order.readyTimestamp) {
+          const elapsed = now - order.readyTimestamp;
+          // 30 minutes in ms = 30 * 60 * 1000 = 1800000
+          
+          // Warning at 25 mins
+          if (elapsed > 1500000 && elapsed < 1560000) { // Approx 25 mins
+             addNotification(order.studentName, `Warning: Order #${order.displayId} will be cancelled in 5 mins without refund!`, 'warning');
+          }
+          
+          // Warning at 30 mins (Cancel threshold)
+          if (elapsed > 1800000) {
+             // In a real app we might auto-cancel here
+             // updateOrderStatus(order.id, 'cancelled');
+             // But for now, just aggressive alerting
+             addNotification(order.studentName, `URGENT: Order #${order.displayId} is past 30 mins pickup window!`, 'error');
+          }
+        }
+      });
+    }, 60000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, [orders]);
+
+  const addNotification = (targetUserName: string, message: string, type: AppNotification['type']) => {
+    // Find user ID for target name (simplified logic)
+    const targetUser = registeredUsers.find(u => u.username === targetUserName);
+    const userId = targetUser ? (targetUser.relatedId || 'unknown') : 'unknown';
+
+    const newNote: AppNotification = {
+      id: Math.random().toString(36).substr(2, 9),
+      userId,
+      title: 'Order Update',
+      message,
+      type,
+      timestamp: Date.now(),
+      read: false
+    };
+
+    setNotifications(prev => [newNote, ...prev]);
+  };
+
+  const markNotificationRead = (id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+
   // --- Auth Actions ---
   const login = async (username: string, password: string): Promise<{ success: boolean; message?: string }> => {
-    // Admin Check (Hardcoded)
     if (username === 'Admin' && password === 'hasini20') {
       setUser({ id: 'admin', name: 'Administrator', role: 'admin' });
       return { success: true };
     }
 
-    // Database Check
     const foundUser = registeredUsers.find(u => u.username.toLowerCase() === username.toLowerCase());
     
     if (!foundUser) {
@@ -100,7 +154,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, message: 'Incorrect password.' };
     }
 
-    // Set User Session
+    // Check Approval for Restaurants
+    if (foundUser.role === 'restaurant') {
+       const restaurant = restaurants.find(r => r.id === foundUser.relatedId);
+       if (restaurant && !restaurant.isApproved) {
+         return { success: false, message: 'Account pending approval. Please contact Admin on WhatsApp.' };
+       }
+    }
+
     setUser({
       id: foundUser.relatedId || Date.now().toString(),
       name: foundUser.username,
@@ -118,27 +179,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     let relatedId = Math.random().toString(36).substr(2, 9);
 
-    // If Restaurant, create restaurant profile
     if (role === 'restaurant') {
       const newRestaurant: Restaurant = {
         id: relatedId,
         name: username,
         cuisine: extraData?.cuisine || 'General',
-        image: 'https://images.unsplash.com/photo-1552566626-52f8b828add9?w=800&q=80' // Default image
+        image: 'https://images.unsplash.com/photo-1552566626-52f8b828add9?w=800&q=80',
+        isApproved: false // Default to unapproved
       };
       setRestaurants(prev => [...prev, newRestaurant]);
     }
 
-    // Save User
     const newUser = { username, password, role, relatedId };
     setRegisteredUsers(prev => [...prev, newUser]);
 
-    // Auto Login
+    // Do NOT auto login for restaurants now, as they need approval
+    if (role === 'restaurant') {
+        return { success: true, message: 'PENDING_APPROVAL' }; 
+    }
+
     setUser({
       id: relatedId,
       name: username,
       role: role,
-      restaurantId: role === 'restaurant' ? relatedId : undefined
+      restaurantId: undefined
     });
 
     return { success: true };
@@ -147,12 +211,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const logout = () => {
     setUser(null);
     setCart([]);
+    setNotifications([]);
   };
 
+  // --- Restaurant Management ---
   const deleteRestaurant = (id: string) => {
     setRestaurants(prev => prev.filter(r => r.id !== id));
-    // Also remove items and orders? For prototype, keeping it simple.
     setMenuState(prev => prev.filter(m => m.restaurantId !== id));
+  };
+
+  const approveRestaurant = (id: string) => {
+    setRestaurants(prev => prev.map(r => r.id === id ? { ...r, isApproved: true } : r));
+  };
+
+  const updateRestaurantImage = (url: string) => {
+    if (user?.role === 'restaurant' && user.restaurantId) {
+        setRestaurants(prev => prev.map(r => r.id === user.restaurantId ? { ...r, image: url } : r));
+    }
   };
 
   // --- Menu Actions ---
@@ -173,7 +248,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!user) return;
     const newOrder: Order = {
       id: Math.random().toString(36).substr(2, 9),
-      displayId: Math.floor(10000 + Math.random() * 90000).toString(), // 5-digit ID
+      displayId: Math.floor(10000 + Math.random() * 90000).toString(),
       restaurantId,
       studentName: user.name,
       items,
@@ -184,12 +259,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
     setOrders(prev => [newOrder, ...prev]);
     clearCart();
+    
+    // Notify Restaurant (simulated by adding to their notification stack if we had one, but restaurant dashboard polls orders anyway)
+    // We can add a notification for the student
+    addNotification(user.name, `Order #${newOrder.displayId} placed successfully.`, 'info');
   };
 
   const updateOrderStatus = (orderId: string, status: Order['status']) => {
     setOrders(prev => prev.map(o => {
       if (o.id === orderId) {
-        return { ...o, status };
+        const updates: Partial<Order> = { status };
+        
+        // Notify Student
+        let message = `Order #${o.displayId} status: ${status}`;
+        let type: AppNotification['type'] = 'info';
+
+        if (status === 'accepted') {
+             message = `Good news! Order #${o.displayId} has been accepted.`;
+             type = 'success';
+        } else if (status === 'ready') {
+             updates.readyTimestamp = Date.now(); // Mark ready time
+             message = `Order #${o.displayId} is READY! Pickup now.`;
+             type = 'success';
+        } else if (status === 'declined') {
+            message = `Order #${o.displayId} was declined. Refund initiated.`;
+            type = 'error';
+        }
+
+        // We trigger the notification here. 
+        // Note: In a real app this would go to the specific user via backend. 
+        // Here we just add to the global notification state which filters by user in the UI.
+        addNotification(o.studentName, message, type);
+
+        return { ...o, ...updates };
       }
       return o;
     }));
@@ -239,10 +341,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   return (
     <AppContext.Provider value={{
       user, login, signup, logout,
-      restaurants, deleteRestaurant,
+      restaurants, deleteRestaurant, approveRestaurant, updateRestaurantImage,
       menu, addMenuItem, setMenu, deleteMenuItem,
       orders, placeOrder, updateOrderStatus, verifyOrderPickup,
-      cart, addToCart, removeFromCart, clearCart, updateCartQuantity
+      cart, addToCart, removeFromCart, clearCart, updateCartQuantity,
+      notifications, markNotificationRead
     }}>
       {children}
     </AppContext.Provider>

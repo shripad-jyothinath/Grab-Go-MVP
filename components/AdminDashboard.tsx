@@ -7,14 +7,19 @@ import {
   Trash2, 
   TrendingUp, 
   ShoppingBag,
-  Users
+  Users,
+  CheckCircle,
+  AlertTriangle
 } from 'lucide-react';
 
 const AdminDashboard: React.FC = () => {
-  const { logout, restaurants, deleteRestaurant, orders, user } = useApp();
+  const { logout, restaurants, deleteRestaurant, approveRestaurant, orders, user } = useApp();
 
   const totalRevenue = orders.reduce((sum, order) => sum + order.totalAmount, 0);
   const totalOrders = orders.length;
+
+  const pendingRestaurants = restaurants.filter(r => !r.isApproved);
+  const activeRestaurants = restaurants.filter(r => r.isApproved);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -49,7 +54,7 @@ const AdminDashboard: React.FC = () => {
             </div>
             <div>
               <p className="text-sm text-slate-500 font-medium">Active Restaurants</p>
-              <p className="text-2xl font-bold text-slate-800">{restaurants.length}</p>
+              <p className="text-2xl font-bold text-slate-800">{activeRestaurants.length}</p>
             </div>
           </div>
           
@@ -74,14 +79,59 @@ const AdminDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Restaurant Management */}
+        {/* Pending Approvals Section */}
+        {pendingRestaurants.length > 0 && (
+          <div className="bg-white rounded-xl border border-yellow-200 shadow-sm overflow-hidden mb-10">
+             <div className="px-6 py-4 border-b border-yellow-100 flex justify-between items-center bg-yellow-50">
+                <h2 className="text-lg font-bold text-yellow-800 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5" />
+                  Pending Approvals
+                </h2>
+                <span className="text-xs font-bold bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">
+                  Action Required ({pendingRestaurants.length})
+                </span>
+             </div>
+             <div className="overflow-x-auto">
+               <table className="w-full text-left">
+                  <tbody className="divide-y divide-slate-100">
+                    {pendingRestaurants.map(r => (
+                      <tr key={r.id} className="hover:bg-slate-50">
+                        <td className="px-6 py-4">
+                          <span className="font-bold text-slate-800 block">{r.name}</span>
+                          <span className="text-xs text-slate-500">{r.cuisine}</span>
+                        </td>
+                        <td className="px-6 py-4">
+                            <span className="text-xs text-slate-400">ID: {r.id}</span>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <button
+                            onClick={() => approveRestaurant(r.id)}
+                            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold mr-2 transition"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => deleteRestaurant(r.id)}
+                            className="bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg text-sm font-bold transition"
+                          >
+                            Reject
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+               </table>
+             </div>
+          </div>
+        )}
+
+        {/* Active Restaurant Management */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
             <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
               <Users className="w-5 h-5 text-slate-500" />
               Restaurant Management
             </h2>
-            <span className="text-xs font-mono text-slate-400 uppercase">System Data</span>
           </div>
 
           <div className="overflow-x-auto">
@@ -94,14 +144,14 @@ const AdminDashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {restaurants.length === 0 ? (
+                {activeRestaurants.length === 0 ? (
                   <tr>
                     <td colSpan={3} className="px-6 py-8 text-center text-slate-400">
-                      No registered restaurants found.
+                      No active restaurants.
                     </td>
                   </tr>
                 ) : (
-                  restaurants.map((restaurant) => (
+                  activeRestaurants.map((restaurant) => (
                     <tr key={restaurant.id} className="hover:bg-slate-50 transition">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">

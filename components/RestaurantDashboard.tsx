@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { parseMenuFromImage } from '../services/geminiService';
 import { MenuItem, OrderStatus } from '../types';
@@ -15,17 +15,20 @@ import {
   DollarSign,
   ChefHat,
   Bell,
-  Hash
+  Hash,
+  Camera,
+  Edit2
 } from 'lucide-react';
 
 const RestaurantDashboard: React.FC = () => {
-  const { user, menu, setMenu, addMenuItem, deleteMenuItem, orders, updateOrderStatus, verifyOrderPickup, logout } = useApp();
+  const { user, menu, setMenu, addMenuItem, deleteMenuItem, orders, updateOrderStatus, verifyOrderPickup, logout, restaurants, updateRestaurantImage } = useApp();
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders');
   
   // Menu State
   const [isProcessing, setIsProcessing] = useState(false);
   const [newItem, setNewItem] = useState<Partial<MenuItem>>({ name: '', price: 0, category: 'Mains', description: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const coverImageInputRef = useRef<HTMLInputElement>(null);
 
   // Verification State
   const [verificationInput, setVerificationInput] = useState<Record<string, string>>({});
@@ -33,6 +36,30 @@ const RestaurantDashboard: React.FC = () => {
   // Filtered Data based on Logged In Restaurant
   const restaurantOrders = orders.filter(o => o.restaurantId === user?.restaurantId);
   const restaurantMenu = menu.filter(m => m.restaurantId === user?.restaurantId);
+  const currentRestaurant = restaurants.find(r => r.id === user?.restaurantId);
+
+  // Notification Permission Popup
+  const [showNotifPermission, setShowNotifPermission] = useState(false);
+
+  useEffect(() => {
+    // Check if permission is needed
+    if ('Notification' in window && Notification.permission === 'default') {
+        setShowNotifPermission(true);
+    }
+  }, []);
+
+  const requestNotificationAccess = () => {
+    if ('Notification' in window) {
+        Notification.requestPermission().then(permission => {
+            if (permission === 'granted') {
+                new Notification("Notifications Enabled", { body: "You will now receive order updates!" });
+            }
+            setShowNotifPermission(false);
+        });
+    } else {
+        setShowNotifPermission(false);
+    }
+  };
 
   // --- Handlers ---
 
@@ -63,6 +90,18 @@ const RestaurantDashboard: React.FC = () => {
     } catch (error) {
       alert("Failed to read menu. Please try again.");
       setIsProcessing(false);
+    }
+  };
+
+  const handleCoverImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const result = reader.result as string;
+            updateRestaurantImage(result);
+        };
+        reader.readAsDataURL(file);
     }
   };
 
@@ -128,13 +167,14 @@ const RestaurantDashboard: React.FC = () => {
                   ${order.status === 'ready' ? 'bg-indigo-100 text-indigo-700' : ''}
                   ${order.status === 'declined' ? 'bg-red-100 text-red-700' : ''}
                   ${order.status === 'completed' ? 'bg-green-100 text-green-700' : ''}
+                  ${order.status === 'cancelled' ? 'bg-red-200 text-red-900' : ''}
                 `}>
                   {order.status === 'ready' ? 'Ready for Pickup' : order.status}
                 </span>
               </div>
               <div className="text-sm text-slate-500 mb-4 flex items-center gap-2">
                 <Clock className="w-4 h-4" />
-                Pickup: {order.pickupTime || 'ASAP'}
+                Pickup: {order.pickupTime === 'ASAP' ? <span className="font-bold text-orange-600">ASAP (Prepare Instantly)</span> : order.pickupTime}
               </div>
               <div className="space-y-1">
                 {order.items.map(item => (
@@ -324,41 +364,96 @@ const RestaurantDashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-20">
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ChefHat className="text-orange-600" />
-            <h1 className="text-xl font-bold text-slate-800">
-               {user?.name} <span className="text-orange-600 font-normal text-sm">Admin</span>
-            </h1>
+      
+      {/* Notification Modal */}
+      {showNotifPermission && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-2xl animate-fade-in">
+                  <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-4 mx-auto">
+                      <Bell className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-lg font-bold text-center text-slate-800 mb-2">Enable Notifications?</h3>
+                  <p className="text-center text-slate-500 text-sm mb-6">
+                      Get instant alerts when you receive a new order so you never miss a beat.
+                  </p>
+                  <div className="flex gap-3">
+                      <button 
+                        onClick={() => setShowNotifPermission(false)}
+                        className="flex-1 py-2 text-slate-500 hover:bg-slate-100 rounded-lg text-sm font-medium"
+                      >
+                          Later
+                      </button>
+                      <button 
+                        onClick={requestNotificationAccess}
+                        className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold shadow-lg shadow-indigo-200"
+                      >
+                          Enable
+                      </button>
+                  </div>
+              </div>
           </div>
-          <button onClick={logout} className="text-sm text-slate-500 hover:text-slate-800 px-3 py-1">
-            Log Out
-          </button>
-        </div>
-        
-        {/* Tabs */}
-        <div className="max-w-5xl mx-auto px-4 flex gap-6 overflow-x-auto scrollbar-hide">
-          <button
-            onClick={() => setActiveTab('orders')}
-            className={`pb-3 pt-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-              activeTab === 'orders' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Live Orders
-          </button>
-          <button
-            onClick={() => setActiveTab('menu')}
-            className={`pb-3 pt-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-              activeTab === 'menu' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Menu Management
-          </button>
-        </div>
-      </header>
+      )}
 
-      <main className="max-w-5xl mx-auto px-4 py-8">
+      {/* Header with Cover Image Edit */}
+      <div className="bg-slate-800 text-white pb-16 relative">
+          {/* Cover Image Simulation */}
+          <div className="absolute inset-0 opacity-20 bg-center bg-cover" style={{ backgroundImage: `url(${currentRestaurant?.image})` }}></div>
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-900/50 to-slate-900"></div>
+
+          <div className="max-w-5xl mx-auto px-4 relative z-10 pt-6">
+            <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2 bg-white/10 rounded-lg backdrop-blur-sm">
+                        <ChefHat className="w-6 h-6 text-orange-400" />
+                    </div>
+                    <div>
+                        <h1 className="text-xl font-bold">{user?.name}</h1>
+                        <p className="text-slate-400 text-sm">Admin Dashboard</p>
+                    </div>
+                </div>
+                <div className="flex gap-3">
+                    <input 
+                        type="file" 
+                        accept="image/*" 
+                        className="hidden" 
+                        ref={coverImageInputRef}
+                        onChange={handleCoverImageUpload}
+                    />
+                    <button 
+                        onClick={() => coverImageInputRef.current?.click()}
+                        className="text-xs bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full flex items-center gap-2 backdrop-blur-sm transition"
+                    >
+                        <Edit2 className="w-3 h-3" /> Edit Cover
+                    </button>
+                    <button onClick={logout} className="text-xs bg-red-500/20 hover:bg-red-500/30 text-red-200 px-3 py-1.5 rounded-full backdrop-blur-sm transition">
+                        Log Out
+                    </button>
+                </div>
+            </div>
+            
+             {/* Tabs moved inside header block */}
+            <div className="flex gap-6 overflow-x-auto scrollbar-hide pt-4 border-t border-white/10">
+                <button
+                    onClick={() => setActiveTab('orders')}
+                    className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                    activeTab === 'orders' ? 'border-orange-500 text-orange-400' : 'border-transparent text-slate-400 hover:text-white'
+                    }`}
+                >
+                    Live Orders
+                </button>
+                <button
+                    onClick={() => setActiveTab('menu')}
+                    className={`pb-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                    activeTab === 'menu' ? 'border-orange-500 text-orange-400' : 'border-transparent text-slate-400 hover:text-white'
+                    }`}
+                >
+                    Menu Management
+                </button>
+            </div>
+          </div>
+      </div>
+
+      <main className="max-w-5xl mx-auto px-4 -mt-10 relative z-20">
         {activeTab === 'orders' ? renderOrders() : renderMenuManager()}
       </main>
     </div>

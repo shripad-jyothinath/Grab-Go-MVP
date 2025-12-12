@@ -5,6 +5,7 @@ export interface Restaurant {
   name: string;
   cuisine: string;
   image: string;
+  isApproved: boolean; // New field for approval status
 }
 
 export interface MenuItem {
@@ -17,7 +18,7 @@ export interface MenuItem {
   imageUrl?: string;
 }
 
-export type OrderStatus = 'pending' | 'accepted' | 'declined' | 'ready' | 'completed';
+export type OrderStatus = 'pending' | 'accepted' | 'declined' | 'ready' | 'completed' | 'cancelled';
 
 export interface CartItem extends MenuItem {
   quantity: number;
@@ -32,6 +33,7 @@ export interface Order {
   totalAmount: number;
   status: OrderStatus;
   timestamp: number;
+  readyTimestamp?: number; // Track when order became ready
   pickupTime?: string;
 }
 
@@ -40,4 +42,14 @@ export interface User {
   name: string;
   role: UserRole;
   restaurantId?: string; // If role is restaurant
+}
+
+export interface AppNotification {
+  id: string;
+  userId: string; // Who is this for?
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  timestamp: number;
+  read: boolean;
 }
