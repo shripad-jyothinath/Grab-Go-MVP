@@ -449,6 +449,13 @@ const StudentDashboard: React.FC = () => {
              </div>
           </header>
 
+          {/* DEBUG DEVICE INDICATOR */}
+          {isTestMode && isTestUser && (
+            <div className="fixed top-16 left-2 z-50 bg-black/70 text-white text-[10px] font-mono px-2 py-1 rounded border border-white/20 pointer-events-none">
+              Detected: {isMobile ? 'MOBILE' : 'LAPTOP'}
+            </div>
+          )}
+
           {/* HOME TAB */}
           {activeTab === 'home' && (
               <div className="p-4 space-y-4">
