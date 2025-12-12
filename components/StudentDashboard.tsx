@@ -43,6 +43,7 @@ const StudentDashboard: React.FC = () => {
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
   const [lastOrder, setLastOrder] = useState<any>(null); 
   const [decryptedUpiLink, setDecryptedUpiLink] = useState<string>('#');
+  const [hasClickedPay, setHasClickedPay] = useState(false);
   
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
@@ -84,6 +85,7 @@ const StudentDashboard: React.FC = () => {
           const response = await placeOrder(rest.id, cart, total);
           
           if (response && response.order) {
+              setHasClickedPay(false); // Reset this state for new order
               setLastOrder({
                   ...response.order, 
                   restaurant: rest,
@@ -213,12 +215,22 @@ const StudentDashboard: React.FC = () => {
                   </p>
 
                   <div className="space-y-3">
-                      <a href={decryptedUpiLink} target="_blank" rel="noreferrer" className="block w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition">
+                      <a 
+                        href={decryptedUpiLink} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        onClick={() => setHasClickedPay(true)}
+                        className="block w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition"
+                      >
                           Pay with UPI
                       </a>
-                      <button onClick={handlePaymentComplete} className="w-full bg-white border border-slate-200 text-slate-700 font-bold py-3 rounded-xl hover:bg-slate-50 transition">
-                          I have Paid
-                      </button>
+                      
+                      {hasClickedPay && (
+                          <button onClick={handlePaymentComplete} className="w-full bg-white border border-slate-200 text-slate-700 font-bold py-3 rounded-xl hover:bg-slate-50 transition animate-fade-in">
+                              I have Paid
+                          </button>
+                      )}
+
                       <button onClick={() => setLastOrder(null)} className="text-xs text-slate-400 font-medium hover:text-slate-600 mt-2">
                           Close (Pay Later)
                       </button>

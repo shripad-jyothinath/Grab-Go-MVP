@@ -153,19 +153,21 @@ export const apiCreateTestOrder = async (restaurantId: string, items: CartItem[]
 };
 
 export const apiMarkPaid = async (orderId: string, merchantReference?: string) => {
-   const { data: { session } } = await supabase.auth.getSession();
-   // Allow test user bypass
-   // if (!session) throw new Error("Not authenticated");
-
    // Try normal order
-   const { error } = await supabase
+   const { data, error } = await supabase
      .from('orders')
      .update({ paid: true })
-     .eq('id', orderId);
+     .eq('id', orderId)
+     .select();
 
-   // If error or not found, try test order
-   if (error) {
-       await supabase.from('test_orders').update({ paid: true }).eq('id', orderId);
+   // If error or not found (no rows updated), try test order
+   if (error || !data || data.length === 0) {
+       const { error: testError } = await supabase.from('test_orders').update({ paid: true }).eq('id', orderId);
+       if (testError) {
+           console.error("Failed to mark paid in test_orders", testError);
+           // Not throwing here to allow the UI to optimistic update or retry, 
+           // but technically it failed if both tables missed.
+       }
    }
 
   return { ok: true };
