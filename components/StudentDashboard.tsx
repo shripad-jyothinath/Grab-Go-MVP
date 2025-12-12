@@ -38,7 +38,7 @@ const StudentDashboard: React.FC = () => {
       user, logout, updateProfile, 
       restaurants, menu, cart, 
       addToCart, updateCartQuantity, placeOrder, clearCart, markOrderPaid,
-      orders, isTestMode, isTestUser, enableTestUser, loginAsTestRestaurant 
+      orders, isTestMode, isTestUser, enableTestUser, loginAsTestRestaurant, showToast 
   } = useApp();
   
   const [activeTab, setActiveTab] = useState<'home' | 'orders' | 'cart' | 'profile'>('home');
@@ -75,7 +75,7 @@ const StudentDashboard: React.FC = () => {
   const handleCheckout = async () => {
       // Check for Test Mode restriction
       if (isTestMode && !isTestUser) {
-          alert("Maintenance Mode Active. Ordering is currently disabled.");
+          showToast("Maintenance Mode Active. Ordering is currently disabled.", 'error');
           return;
       }
 
@@ -104,10 +104,9 @@ const StudentDashboard: React.FC = () => {
                   displayId: response.order.id.slice(0, 8).toUpperCase()
               });
               setSelectedRestaurant(null);
-              // Do not switch tab immediately, show modal
           }
       } catch (e) {
-          alert("Order failed. Please try again.");
+          // Handled in context
       }
   }
 
@@ -150,7 +149,7 @@ const StudentDashboard: React.FC = () => {
          await markOrderPaid(lastOrder.id);
          setLastOrder(null);
          setActiveTab('orders');
-         alert("Order marked as paid! Wait for restaurant confirmation.");
+         showToast("Order marked as paid! Wait for confirmation.", 'success');
      }
   }
 
@@ -159,10 +158,9 @@ const StudentDashboard: React.FC = () => {
       setIsSaving(true);
       try {
           await updateProfile(editName, editPhone);
-          alert("Profile updated!");
           setShowSettings(false);
       } catch (e) {
-          alert("Failed to update profile.");
+          showToast("Failed to update profile", 'error');
       } finally {
           setIsSaving(false);
       }
@@ -181,11 +179,10 @@ const StudentDashboard: React.FC = () => {
   const handlePinSubmit = (e: React.FormEvent) => {
       e.preventDefault();
       if (enableTestUser(pinCode)) {
-          alert("Test User Mode Activated!");
           setShowPinModal(false);
           setPinCode('');
       } else {
-          alert("Invalid PIN");
+          showToast("Invalid PIN", 'error');
           setPinCode('');
       }
   };

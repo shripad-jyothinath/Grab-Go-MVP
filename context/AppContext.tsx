@@ -19,9 +19,15 @@ import {
 } from '../services/api';
 import { Profile, Restaurant, MenuItem, Order, CartItem, AppNotification, Rating } from '../types';
 
+export interface ToastMessage {
+    id: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+}
+
 interface AppContextType {
   user: Profile | null;
-  restaurant: Restaurant | null; // If user is owner
+  restaurant: Restaurant | null; 
   loading: boolean;
   
   // Auth
@@ -74,12 +80,16 @@ interface AppContextType {
   // Misc
   notifications: AppNotification[];
   ratings: Rating[]; 
+
+  // Toasts
+  toasts: ToastMessage[];
+  showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  removeToast: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// --- Mock Data for Test Mode ---
-// Encrypted UPI injection happens here
+// --- Mock Data ---
 export const TEST_RESTAURANTS: Restaurant[] = [
     {
         id: 'test-r1',
@@ -89,7 +99,7 @@ export const TEST_RESTAURANTS: Restaurant[] = [
         verified: true,
         banned: false,
         payment_method: 'upi',
-        upi_id: getMockUpiId(), // Injected from security module
+        upi_id: getMockUpiId(),
         created_at: new Date().toISOString(),
         image: 'https://images.unsplash.com/photo-1571091718767-18b5b1457add?w=800'
     },
@@ -101,7 +111,7 @@ export const TEST_RESTAURANTS: Restaurant[] = [
         verified: true,
         banned: false,
         payment_method: 'upi',
-        upi_id: getMockUpiId(), // Injected from security module
+        upi_id: getMockUpiId(),
         created_at: new Date().toISOString(),
         image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800'
     }
@@ -118,11 +128,10 @@ const TEST_MENU_ITEMS: MenuItem[] = [
 ];
 
 const CONFIG_REST_NAME = '__APP_CONFIG__';
-const CACHE_USER_KEY = 'gg_secure_u'; // Changed to obscure key
-const CACHE_REST_KEY = 'gg_secure_r'; // Changed to obscure key
+const CACHE_USER_KEY = 'gg_secure_u'; 
+const CACHE_REST_KEY = 'gg_secure_r'; 
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Use null initial state for async decrypt load
   const [user, setUser] = useState<Profile | null>(null);
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [loading, setLoading] = useState(true);
@@ -138,8 +147,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isTestMode, setIsTestMode] = useState(false);
   const [isTestUser, setIsTestUser] = useState(false);
 
-  // Track previous orders length for notifications
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
   const prevOrdersLen = useRef(0);
+
+  // --- Toasts ---
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+      const id = Date.now().toString() + Math.random().toString();
+      setToasts(prev => [...prev, { id, message, type }]);
+      setTimeout(() => removeToast(id), 4000);
+  };
+
+  const removeToast = (id: string) => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+  };
 
   // --- Secure Storage Helper ---
   const saveToCache = async (key: string, data: any) => {
@@ -154,7 +175,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let mounted = true;
 
     const init = async () => {
-      // 1. Decrypt Local Storage
       try {
           const uEnc = localStorage.getItem(CACHE_USER_KEY);
           if (uEnc) {
@@ -166,17 +186,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               const rData = await decryptData(rEnc);
               if (rData && mounted) setRestaurant(rData);
           }
-          // Test User flag can be simple
           if (localStorage.getItem('isTestUser') === 'true') setIsTestUser(true);
       } catch (e) {
           console.error("Secure Init Failed", e);
       }
 
-      // 2. Check Backend Session to sync
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
-        // If we have a session, ensure our local state is fresh
         const profile = await fetchUserProfile(session.user.id);
         if (profile && mounted) {
              setUser(profile);
@@ -199,10 +216,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     init();
 
-    // 2. Auth State Listener
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_IN' && session) {
-             // Fetch fresh profile
              const profile = await fetchUserProfile(session.user.id);
              if (mounted && profile) {
                  setUser(profile);
@@ -261,7 +276,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               cuisine: r.cuisine || 'Multi-Cuisine'
             }));
           
-          // Inject test restaurants if System is in Test Mode OR Current User is a Test User
           if (testModeActive || isTestUser) {
              const ids = new Set(mapped.map((r: any) => r.id));
              TEST_RESTAURANTS.forEach(tr => {
@@ -280,7 +294,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setMenu(finalMenu);
   };
 
-  // Re-fetch data when test status changes
   useEffect(() => { 
       refreshMenu(); 
       refreshRestaurants(true); 
@@ -289,7 +302,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const refreshOrders = async () => {
       if (!user) return;
       
-      // If user is a simulated test owner, fetch test orders for their specific ID
       if (user.id.startsWith('test-owner')) {
           const { data: testData } = await supabase.from('test_orders')
             .select('*')
@@ -303,19 +315,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items 
               }));
               
-              // Notification Logic for Test Users
               if (mapped.length > prevOrdersLen.current) {
-                  const newOrder = mapped[0];
-                  setNotifications(prev => [{
-                      id: `notif-${Date.now()}`,
-                      userId: user.id,
-                      title: 'New Order Received',
-                      message: `Order #${newOrder.pickup_code} just arrived!`,
-                      type: 'success',
-                      timestamp: Date.now(),
-                      read: false
-                  }, ...prev]);
-                  // alert("Ding! You have a new order!");
+                  showToast('New test order received!', 'info');
               }
               prevOrdersLen.current = mapped.length;
               setOrders(mapped as any);
@@ -323,7 +324,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           return;
       }
 
-      // 1. Fetch Real Orders
       let query = supabase.from('orders').select('*, profiles(name, phone)');
       if (user.role === 'restaurant_owner' && restaurant) {
           query = query.eq('restaurant_id', restaurant.id);
@@ -334,7 +334,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const { data: realOrders } = await query.order('created_at', { ascending: false });
       let allOrders = realOrders ? (realOrders as any[]) : [];
 
-      // 2. Fetch Test Orders if Test Mode is ON OR isTestUser
       if (isTestMode || isTestUser) {
           let testQuery = supabase.from('test_orders').select('*');
           if (user.role === 'customer') testQuery = testQuery.eq('customer_id', user.id);
@@ -351,21 +350,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       allOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       
-      // Real Notification Logic (Local State Simulation for UI update)
-      // Only trigger if we are in a valid state to avoid initial load spam
       if (prevOrdersLen.current > 0 && allOrders.length > prevOrdersLen.current && user.role === 'restaurant_owner') {
-           setNotifications(prev => [{
-              id: `notif-${Date.now()}`,
-              userId: user.id,
-              title: 'New Order',
-              message: 'Check your dashboard!',
-              type: 'info',
-              timestamp: Date.now(),
-              read: false
-          }, ...prev]);
+           showToast('New order received!', 'success');
       }
       prevOrdersLen.current = allOrders.length;
-      
       setOrders(allOrders);
   };
 
@@ -382,6 +370,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const updated = { ...user, name, phone };
       setUser(updated);
       saveToCache(CACHE_USER_KEY, updated);
+      showToast('Profile updated successfully', 'success');
   };
   
   const updateRestaurantSettings = async (settings: { upi_id?: string }) => {
@@ -394,29 +383,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const updated = { ...restaurant, ...settings };
       setRestaurant(updated);
       saveToCache(CACHE_REST_KEY, updated);
+      showToast('Settings saved', 'success');
   };
 
   const uploadRestaurantImage = async (file: File) => {
       if (!restaurant) return;
       if (restaurant.id.startsWith('test-r')) {
-          alert("Cannot upload images for test restaurants");
+          showToast("Cannot upload images for test restaurants", 'error');
           return;
       }
-      // 1. Upload
       const publicUrl = await apiUploadCoverImage(file);
-      
-      // 2. Update DB
       await apiUpdateRestaurantSettings(restaurant.id, { image: publicUrl });
       
-      // 3. Update State
       const updated = { ...restaurant, image: publicUrl };
       setRestaurant(updated);
       saveToCache(CACHE_REST_KEY, updated);
       setRestaurants(prev => prev.map(r => r.id === restaurant.id ? updated : r));
+      showToast('Cover image updated', 'success');
   };
 
   const login = async (email: string, pass: string) => {
-    // New Secure Hash Check
     const isAdmin = await checkAdminPrivileges(email, pass);
     if (isAdmin) {
          const adminProfile: Profile = {
@@ -440,13 +426,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const logout = async () => {
       await supabase.auth.signOut();
+      showToast('Logged out successfully', 'info');
   };
 
-  // --- Test User ---
   const enableTestUser = (code: string) => {
       if (code === '4321') {
           setIsTestUser(true);
           localStorage.setItem('isTestUser', 'true'); 
+          showToast('Developer Mode Enabled', 'success');
           return true;
       }
       return false;
@@ -467,14 +454,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setRestaurant(testRest);
       saveToCache(CACHE_USER_KEY, mockOwnerProfile);
       saveToCache(CACHE_REST_KEY, testRest);
+      showToast(`Logged in as ${testRest.name}`, 'success');
       setTimeout(() => refreshOrders(), 100);
   };
 
-  // --- Actions ---
   const placeOrder = async (restaurantId: string, items: CartItem[], total: number) => {
       try {
         let response;
-        // Route to test system if global test mode is on OR if ordering from a test restaurant
         if (isTestMode || restaurantId.startsWith('test-')) {
              response = await apiCreateTestOrder(restaurantId, items, total);
         } else {
@@ -488,21 +474,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             };
             setOrders(prev => [fullOrder, ...prev]);
             clearCart();
+            showToast('Order placed successfully!', 'success');
             return response;
         }
-      } catch (e) { console.error(e); throw e; }
+      } catch (e: any) { 
+          console.error(e); 
+          showToast(e.message || 'Order failed', 'error');
+          throw e; 
+      }
   };
 
   const markOrderPaid = async (orderId: string) => {
-      try { await apiMarkPaid(orderId); setOrders(prev => prev.map(o => o.id === orderId ? { ...o, paid: true } : o)); } catch (e) { console.error(e); alert("Failed to mark paid"); }
+      try { await apiMarkPaid(orderId); setOrders(prev => prev.map(o => o.id === orderId ? { ...o, paid: true } : o)); } catch (e) { showToast("Failed to mark paid", 'error'); }
   };
 
   const acceptOrder = async (orderId: string) => {
       try {
-          // Accept also marks as paid usually in this flow
           await apiUpdateOrderStatus(orderId, 'accepted');
           await apiMarkPaid(orderId);
           setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'accepted', paid: true } : o));
+          showToast('Order accepted', 'success');
       } catch (e) { console.error(e); }
   }
 
@@ -510,6 +501,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       try {
           await apiUpdateOrderStatus(orderId, 'declined');
           setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'declined' } : o));
+          showToast('Order declined', 'info');
       } catch (e) { console.error(e); }
   }
   
@@ -517,42 +509,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       try {
           await apiDeleteOrder(orderId);
           setOrders(prev => prev.filter(o => o.id !== orderId));
-      } catch (e) { console.error(e); alert("Failed to delete order"); }
+          showToast('Order deleted', 'info');
+      } catch (e) { showToast("Failed to delete order", 'error'); }
   }
 
   const markOrderReady = async (orderId: string) => {
       await apiUpdateOrderStatus(orderId, 'ready');
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'ready' } : o));
+      showToast('Order marked ready', 'success');
   };
 
   const completeOrder = async (orderId: string, code: string) => {
-      try { await apiCompleteOrder(orderId, code); setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'completed' } : o)); } catch (e) { console.error(e); throw e; }
+      try { await apiCompleteOrder(orderId, code); setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'completed' } : o)); showToast('Order completed!', 'success'); } catch (e) { console.error(e); throw e; }
   };
   
   const addMenuItem = async (item: Omit<MenuItem, 'id' | 'created_at'>) => {
       if (restaurant?.id.startsWith('test-r')) {
           const mockItem = { ...item, id: `test-item-${Date.now()}`, created_at: new Date().toISOString() } as MenuItem;
           setMenu(prev => [...prev, mockItem]);
+          showToast('Item added (Test)', 'success');
           return;
       }
       const newItem = await apiAddMenuItem(item);
       setMenu(prev => [...prev, newItem]);
+      showToast('Menu item added', 'success');
   };
 
   const deleteMenuItem = async (id: string) => {
       if (restaurant?.id.startsWith('test-r')) { setMenu(prev => prev.filter(i => i.id !== id)); return; }
       await apiDeleteMenuItem(id);
       setMenu(prev => prev.filter(i => i.id !== id));
+      showToast('Item removed', 'info');
   };
 
   const deleteRestaurant = async (id: string) => {
      await supabase.from('restaurants').delete().eq('id', id);
      setRestaurants(prev => prev.filter(r => r.id !== id));
+     showToast('Restaurant deleted', 'info');
   };
 
   const approveRestaurant = async (id: string) => {
      await supabase.from('restaurants').update({ verified: true }).eq('id', id);
      setRestaurants(prev => prev.map(r => r.id === id ? { ...r, verified: true } : r));
+     showToast('Restaurant approved', 'success');
   };
 
   const getRestaurantStats = (restaurantId: string) => {
@@ -581,7 +580,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
         setIsTestMode(newStatus);
         await refreshRestaurants(true);
-    } catch (e: any) { console.error("Failed to toggle Test Mode:", e); alert("Failed to save Test Mode state."); refreshRestaurants(true); }
+        showToast(`Test Mode ${newStatus ? 'Enabled' : 'Disabled'}`, 'info');
+    } catch (e: any) { console.error("Failed to toggle Test Mode:", e); showToast("Failed to toggle Test Mode", 'error'); refreshRestaurants(true); }
   };
 
   const addToCart = (item: MenuItem) => {
@@ -591,6 +591,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return [{ ...item, quantity: 1 }];
       }
       const existing = prev.find(i => i.id === item.id);
+      showToast('Added to cart', 'success');
       return existing ? prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i) : [...prev, { ...item, quantity: 1 }];
     });
   };
@@ -608,7 +609,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       cart, addToCart, removeFromCart, updateCartQuantity, clearCart,
       notifications, ratings,
       isTestMode, toggleTestMode,
-      isTestUser, enableTestUser, loginAsTestRestaurant
+      isTestUser, enableTestUser, loginAsTestRestaurant,
+      toasts, showToast, removeToast
     }}>
       {children}
     </AppContext.Provider>

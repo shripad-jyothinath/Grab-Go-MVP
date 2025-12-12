@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { ChefHat, GraduationCap, Lock, Mail, User, Phone, Loader2, Store, AlertCircle, ArrowRight, Wallet } from 'lucide-react';
 
 const Login: React.FC = () => {
-  const { login, signup, loading } = useApp();
+  const { login, signup, loading, showToast } = useApp();
   
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   
@@ -35,13 +35,15 @@ const Login: React.FC = () => {
                 } else {
                     setError(error.message);
                 }
+            } else {
+                showToast('Welcome back!', 'success');
             }
         } else {
             // SignUp
             const { error } = await signup(email, password, name, phone, role, { restaurantName, upiId });
             if (error) setError(error.message);
             else {
-                alert("Account created! You may need to verify your email depending on system settings.");
+                showToast("Account created! You may need to verify your email.", 'success');
                 setAuthMode('signin');
             }
         }

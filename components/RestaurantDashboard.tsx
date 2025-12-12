@@ -31,7 +31,8 @@ const RestaurantDashboard: React.FC = () => {
   const { 
       user, restaurant, orders, notifications,
       markOrderPaid, markOrderReady, acceptOrder, declineOrder, deleteOrder, completeOrder, 
-      logout, menu, addMenuItem, deleteMenuItem, updateRestaurantSettings, uploadRestaurantImage 
+      logout, menu, addMenuItem, deleteMenuItem, updateRestaurantSettings, uploadRestaurantImage,
+      showToast
   } = useApp();
   
   const [verificationCode, setVerificationCode] = useState('');
@@ -74,7 +75,7 @@ const RestaurantDashboard: React.FC = () => {
           const latest = notifications[0];
           if (latest.id !== lastNotif && Date.now() - latest.timestamp < 5000) {
               setLastNotif(latest.id);
-              // Simple browser alert for MVP or assume the UI updates are enough
+              showToast(latest.message, 'info');
           }
       }
   }, [notifications]);
@@ -109,9 +110,9 @@ const RestaurantDashboard: React.FC = () => {
       try {
           await completeOrder(orderId, verificationCode);
           setVerificationCode('');
-          alert("Order Completed Successfully!");
+          // Toast handled in context
       } catch (e) {
-          alert("Invalid Pickup Code.");
+          showToast("Invalid Pickup Code", 'error');
       }
   };
 
@@ -119,12 +120,11 @@ const RestaurantDashboard: React.FC = () => {
       e.preventDefault();
       try {
           await updateRestaurantSettings({ upi_id: editUpi });
-          alert("Settings Saved!");
           setEditUpi('');
           setDecryptedUpi('Updating...');
-          setTimeout(() => setActiveTab('settings'), 500); // Trigger re-decrypt
+          setTimeout(() => setActiveTab('settings'), 500); 
       } catch (e: any) {
-          alert("Failed: " + e.message);
+          showToast("Failed: " + e.message, 'error');
       }
   };
 
@@ -135,9 +135,8 @@ const RestaurantDashboard: React.FC = () => {
       try {
           setIsUploading(true);
           await uploadRestaurantImage(file);
-          alert("Cover image updated successfully!");
       } catch (e: any) {
-          alert("Failed to upload image: " + e.message);
+          showToast("Failed to upload image: " + e.message, 'error');
       } finally {
           setIsUploading(false);
       }
@@ -159,7 +158,7 @@ const RestaurantDashboard: React.FC = () => {
         setNewItemDesc('');
         setIsAddingItem(false);
     } catch (e: any) {
-        alert("Error adding item: " + e.message);
+        showToast("Error adding item: " + e.message, 'error');
     }
   };
 
@@ -180,7 +179,7 @@ const RestaurantDashboard: React.FC = () => {
               const parsedItems = await parseMenuFromImage(base64Data);
               
               if (parsedItems.length === 0) {
-                  alert("Could not detect any menu items.");
+                  showToast("Could not detect any menu items.", 'error');
                   return;
               }
 
@@ -196,12 +195,12 @@ const RestaurantDashboard: React.FC = () => {
                   });
                   addedCount++;
               }
-              alert(`Successfully imported ${addedCount} items from the menu image!`);
+              showToast(`Imported ${addedCount} items successfully!`, 'success');
               setIsProcessingAI(false);
           };
       } catch (e: any) {
           console.error(e);
-          alert("Failed to process image: " + e.message);
+          showToast("Failed to process image: " + e.message, 'error');
           setIsProcessingAI(false);
       }
   };
@@ -347,7 +346,7 @@ const RestaurantDashboard: React.FC = () => {
                                   <span className="text-xs text-slate-400 font-mono">({o.id.slice(0,6)})</span>
                               </div>
                               <button 
-                                onClick={() => completeOrder(o.id, verificationCode)}
+                                onClick={() => handleVerifyCode(o.id)}
                                 className="bg-slate-900 text-white px-3 py-1 rounded text-sm"
                               >
                                   Verify
