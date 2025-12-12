@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { encryptData, decryptData, getMockUpiId } from '../lib/security';
 import { 
@@ -13,7 +13,8 @@ import {
   apiDeleteMenuItem,
   apiSignup,
   checkAdminPrivileges,
-  apiUpdateRestaurantSettings
+  apiUpdateRestaurantSettings,
+  apiDeleteOrder
 } from '../services/api';
 import { Profile, Restaurant, MenuItem, Order, CartItem, AppNotification, Rating } from '../types';
 
@@ -38,6 +39,9 @@ interface AppContextType {
   placeOrder: (restaurantId: string, items: CartItem[], total: number) => Promise<any>;
   markOrderPaid: (orderId: string) => Promise<void>;
   markOrderReady: (orderId: string) => Promise<void>;
+  acceptOrder: (orderId: string) => Promise<void>;
+  declineOrder: (orderId: string) => Promise<void>;
+  deleteOrder: (orderId: string) => Promise<void>;
   completeOrder: (orderId: string, code: string) => Promise<void>;
   
   // Menu Management
@@ -131,6 +135,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const [isTestMode, setIsTestMode] = useState(false);
   const [isTestUser, setIsTestUser] = useState(false);
+
+  // Track previous orders length for notifications
+  const prevOrdersLen = useRef(0);
 
   // --- Secure Storage Helper ---
   const saveToCache = async (key: string, data: any) => {
@@ -293,6 +300,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   is_test: true, 
                   items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items 
               }));
+              
+              // Notification Logic for Test Users
+              if (mapped.length > prevOrdersLen.current) {
+                  const newOrder = mapped[0];
+                  setNotifications(prev => [{
+                      id: `notif-${Date.now()}`,
+                      userId: user.id,
+                      title: 'New Order Received',
+                      message: `Order #${newOrder.pickup_code} just arrived!`,
+                      type: 'success',
+                      timestamp: Date.now(),
+                      read: false
+                  }, ...prev]);
+                  // alert("Ding! You have a new order!");
+              }
+              prevOrdersLen.current = mapped.length;
               setOrders(mapped as any);
           }
           return;
@@ -325,6 +348,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       allOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      
+      // Real Notification Logic (Local State Simulation for UI update)
+      // Only trigger if we are in a valid state to avoid initial load spam
+      if (prevOrdersLen.current > 0 && allOrders.length > prevOrdersLen.current && user.role === 'restaurant_owner') {
+           setNotifications(prev => [{
+              id: `notif-${Date.now()}`,
+              userId: user.id,
+              title: 'New Order',
+              message: 'Check your dashboard!',
+              type: 'info',
+              timestamp: Date.now(),
+              read: false
+          }, ...prev]);
+      }
+      prevOrdersLen.current = allOrders.length;
+      
       setOrders(allOrders);
   };
 
@@ -437,6 +476,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       try { await apiMarkPaid(orderId); setOrders(prev => prev.map(o => o.id === orderId ? { ...o, paid: true } : o)); } catch (e) { console.error(e); alert("Failed to mark paid"); }
   };
 
+  const acceptOrder = async (orderId: string) => {
+      try {
+          // Accept also marks as paid usually in this flow
+          await apiUpdateOrderStatus(orderId, 'accepted');
+          await apiMarkPaid(orderId);
+          setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'accepted', paid: true } : o));
+      } catch (e) { console.error(e); }
+  }
+
+  const declineOrder = async (orderId: string) => {
+      try {
+          await apiUpdateOrderStatus(orderId, 'declined');
+          setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'declined' } : o));
+      } catch (e) { console.error(e); }
+  }
+  
+  const deleteOrder = async (orderId: string) => {
+      try {
+          await apiDeleteOrder(orderId);
+          setOrders(prev => prev.filter(o => o.id !== orderId));
+      } catch (e) { console.error(e); alert("Failed to delete order"); }
+  }
+
   const markOrderReady = async (orderId: string) => {
       await apiUpdateOrderStatus(orderId, 'ready');
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'ready' } : o));
@@ -519,7 +581,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     <AppContext.Provider value={{
       user, restaurant, loading, login, signup, logout, updateProfile, updateRestaurantSettings,
       restaurants, menu, orders,
-      placeOrder, markOrderPaid, markOrderReady, completeOrder,
+      placeOrder, markOrderPaid, markOrderReady, acceptOrder, declineOrder, deleteOrder, completeOrder,
       addMenuItem, deleteMenuItem,
       deleteRestaurant, approveRestaurant, getRestaurantStats,
       cart, addToCart, removeFromCart, updateCartQuantity, clearCart,

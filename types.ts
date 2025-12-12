@@ -43,7 +43,7 @@ export interface CartItem extends MenuItem {
   quantity: number;
 }
 
-export type OrderStatus = 'pending' | 'ready' | 'completed' | 'cancelled';
+export type OrderStatus = 'pending' | 'accepted' | 'declined' | 'ready' | 'completed' | 'cancelled';
 
 export interface Order {
   id: string;

@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Restaurant, MenuItem } from '../types';
+import { decryptData } from '../lib/security';
 import { 
   ShoppingBag, 
   Search, 
@@ -25,7 +26,8 @@ import {
   Save,
   Loader2,
   Lock,
-  Wallet
+  Wallet,
+  XCircle
 } from 'lucide-react';
 import { TEST_RESTAURANTS } from '../context/AppContext';
 
@@ -40,6 +42,7 @@ const StudentDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'home' | 'orders' | 'cart' | 'profile'>('home');
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
   const [lastOrder, setLastOrder] = useState<any>(null); 
+  const [decryptedUpiLink, setDecryptedUpiLink] = useState<string>('#');
   
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
@@ -53,7 +56,7 @@ const StudentDashboard: React.FC = () => {
   const [pinCode, setPinCode] = useState('');
 
   // --- Logic ---
-  const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled');
+  const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled' && o.status !== 'declined');
   const cartTotal = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
 
   const handleCheckout = async () => {
@@ -93,6 +96,40 @@ const StudentDashboard: React.FC = () => {
           alert("Order failed. Please try again.");
       }
   }
+
+  // Effect to decrypt UPI and build link
+  useEffect(() => {
+      const buildLink = async () => {
+          if (!lastOrder) return;
+          const rest = lastOrder.restaurant;
+          if (!rest.upi_id) {
+              setDecryptedUpiLink('#');
+              return;
+          }
+
+          let upi = rest.upi_id;
+          if (!lastOrder.is_test) {
+              // Decrypt real orders
+              try {
+                  const val = await decryptData(upi);
+                  if (val) upi = val;
+              } catch(e) { console.error("Decryption failed", e); }
+          }
+          // If test, upi is already the mock ID (raw)
+
+          const tn = `Order ${lastOrder.displayId}`;
+          const params = new URLSearchParams({
+              pa: upi,
+              pn: rest.name,
+              am: lastOrder.total.toString(),
+              tn: tn,
+              cu: 'INR'
+          });
+          setDecryptedUpiLink(`upi://pay?${params.toString()}`);
+      };
+
+      buildLink();
+  }, [lastOrder]);
 
   const handlePaymentComplete = async () => {
      if(lastOrder) {
@@ -139,25 +176,9 @@ const StudentDashboard: React.FC = () => {
       }
   };
 
-  const buildUpiLink = (orderId: string, total: number, rest: Restaurant) => {
-      if (!rest.upi_id) return '#';
-      // tn = Transaction Note = Order ID
-      const tn = `Order ${orderId}`;
-      const params = new URLSearchParams({
-          pa: rest.upi_id,
-          pn: rest.name,
-          am: total.toString(),
-          tn: tn,
-          cu: 'INR'
-      });
-      return `upi://pay?${params.toString()}`;
-  };
-
   // --- Renderers ---
   
   if (lastOrder) {
-      const upiLink = buildUpiLink(lastOrder.displayId, lastOrder.total, lastOrder.restaurant);
-
       return (
           <div className="fixed inset-0 z-[60] bg-white flex flex-col items-center justify-center p-6">
               <div className="bg-white rounded-2xl w-full max-w-md p-6 text-center animate-fade-in-up">
@@ -192,7 +213,7 @@ const StudentDashboard: React.FC = () => {
                   </p>
 
                   <div className="space-y-3">
-                      <a href={upiLink} target="_blank" rel="noreferrer" className="block w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition">
+                      <a href={decryptedUpiLink} target="_blank" rel="noreferrer" className="block w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition">
                           Pay with UPI
                       </a>
                       <button onClick={handlePaymentComplete} className="w-full bg-white border border-slate-200 text-slate-700 font-bold py-3 rounded-xl hover:bg-slate-50 transition">
@@ -446,7 +467,12 @@ const StudentDashboard: React.FC = () => {
                                 </div>
                                 <div className="flex flex-col items-end gap-1">
                                     {o.is_test && <span className="text-[10px] font-bold bg-yellow-200 text-yellow-800 px-1 rounded">TEST</span>}
-                                    <span className={`px-2 py-1 rounded text-xs font-bold capitalize ${o.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                                    <span className={`px-2 py-1 rounded text-xs font-bold capitalize ${
+                                        o.status === 'completed' ? 'bg-green-100 text-green-700' : 
+                                        o.status === 'declined' ? 'bg-red-100 text-red-700' :
+                                        o.status === 'accepted' ? 'bg-indigo-100 text-indigo-700' :
+                                        'bg-yellow-100 text-yellow-700'
+                                    }`}>
                                         {o.status}
                                     </span>
                                 </div>
@@ -456,7 +482,13 @@ const StudentDashboard: React.FC = () => {
                             </div>
                             <div className="flex justify-between items-center mt-2">
                                 <span className="font-bold">₹{o.total}</span>
-                                <span className={`text-xs font-bold ${o.paid ? 'text-green-600' : 'text-red-500'}`}>{o.paid ? 'PAID' : 'UNPAID'}</span>
+                                {o.status === 'declined' ? (
+                                    <div className="text-xs font-bold text-red-600 flex items-center gap-1">
+                                        <XCircle className="w-3 h-3" /> Declined
+                                    </div>
+                                ) : (
+                                    <span className={`text-xs font-bold ${o.paid ? 'text-green-600' : 'text-red-500'}`}>{o.paid ? 'PAID' : 'UNPAID'}</span>
+                                )}
                             </div>
                         </div>
                       ))

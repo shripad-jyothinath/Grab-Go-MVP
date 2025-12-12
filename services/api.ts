@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { CartItem, MenuItem, Profile } from '../types';
-import { hashString } from '../lib/security';
+import { hashString, encryptData } from '../lib/security';
 
 // --- Direct DB Interactions ---
 
@@ -60,11 +60,17 @@ export const apiSignup = async (email: string, pass: string, name: string, phone
 
         // If Restaurant, create Restaurant row
         if (finalRole === 'restaurant_owner') {
+             // Encrypt UPI ID if present
+             let encryptedUpi = extra?.upiId;
+             if (encryptedUpi) {
+                 encryptedUpi = await encryptData(encryptedUpi);
+             }
+
              const { error: restError } = await supabase.from('restaurants').insert([{
                  owner_id: data.user.id,
                  name: extra?.restaurantName || 'My Restaurant',
                  payment_method: 'upi', 
-                 upi_id: extra?.upiId, // Save the UPI ID
+                 upi_id: encryptedUpi, // Save the Encrypted UPI ID
                  verified: false // Restaurants require admin approval
              }]);
              if (restError) return { error: restError };
@@ -74,7 +80,11 @@ export const apiSignup = async (email: string, pass: string, name: string, phone
 };
 
 export const apiUpdateRestaurantSettings = async (restaurantId: string, updates: { upi_id?: string; image?: string; name?: string }) => {
-    const { error } = await supabase.from('restaurants').update(updates).eq('id', restaurantId);
+    const payload = { ...updates };
+    if (payload.upi_id) {
+        payload.upi_id = await encryptData(payload.upi_id) || '';
+    }
+    const { error } = await supabase.from('restaurants').update(payload).eq('id', restaurantId);
     if (error) throw new Error(error.message);
 }
 
@@ -207,11 +217,17 @@ export const apiUpdateOrderStatus = async (orderId: string, status: string) => {
         .update({ status })
         .eq('id', orderId);
         
-    if (!error) {
+    if (error) {
+         // Try test order if regular failed
          await supabase.from('test_orders').update({ status }).eq('id', orderId);
     }
-    
-    if (error) throw new Error(error.message);
+};
+
+export const apiDeleteOrder = async (orderId: string) => {
+    const { error } = await supabase.from('orders').delete().eq('id', orderId);
+    if (error) {
+        await supabase.from('test_orders').delete().eq('id', orderId);
+    }
 };
 
 // --- Menu Management ---

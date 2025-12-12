@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Order, MenuItem } from '../types';
+import { decryptData } from '../lib/security';
 import { 
     Bell, 
     CheckCircle2, 
@@ -19,12 +20,19 @@ import {
     ListChecks,
     QrCode,
     Settings,
-    Save
+    Save,
+    XCircle,
+    Check
 } from 'lucide-react';
 import { parseMenuFromImage } from '../services/geminiService';
 
 const RestaurantDashboard: React.FC = () => {
-  const { user, restaurant, orders, markOrderPaid, markOrderReady, completeOrder, logout, menu, addMenuItem, deleteMenuItem, updateRestaurantSettings } = useApp();
+  const { 
+      user, restaurant, orders, notifications,
+      markOrderPaid, markOrderReady, acceptOrder, declineOrder, deleteOrder, completeOrder, 
+      logout, menu, addMenuItem, deleteMenuItem, updateRestaurantSettings 
+  } = useApp();
+  
   const [verificationCode, setVerificationCode] = useState('');
   const [activeTab, setActiveTab] = useState<'orders' | 'verify' | 'menu' | 'settings'>('orders');
 
@@ -37,6 +45,37 @@ const RestaurantDashboard: React.FC = () => {
 
   // Settings State
   const [editUpi, setEditUpi] = useState('');
+  const [decryptedUpi, setDecryptedUpi] = useState('Loading...');
+
+  // Decrypt UPI when tab is active
+  useEffect(() => {
+      const loadUpi = async () => {
+          if (restaurant?.upi_id) {
+              if (restaurant.id.startsWith('test-')) {
+                  // Test restaurants store plain mock ID
+                  setDecryptedUpi(restaurant.upi_id);
+              } else {
+                  const val = await decryptData(restaurant.upi_id);
+                  setDecryptedUpi(val || 'Error decrypting');
+              }
+          } else {
+              setDecryptedUpi('Not Set');
+          }
+      };
+      if (activeTab === 'settings') loadUpi();
+  }, [activeTab, restaurant]);
+
+  // Notifications Toast
+  const [lastNotif, setLastNotif] = useState<string | null>(null);
+  useEffect(() => {
+      if (notifications.length > 0) {
+          const latest = notifications[0];
+          if (latest.id !== lastNotif && Date.now() - latest.timestamp < 5000) {
+              setLastNotif(latest.id);
+              // Simple browser alert for MVP or assume the UI updates are enough
+          }
+      }
+  }, [notifications]);
 
   if (!restaurant) return <div className="p-10 text-center">Loading Restaurant Profile...</div>;
 
@@ -80,6 +119,8 @@ const RestaurantDashboard: React.FC = () => {
           await updateRestaurantSettings({ upi_id: editUpi });
           alert("Settings Saved!");
           setEditUpi('');
+          setDecryptedUpi('Updating...');
+          setTimeout(() => setActiveTab('settings'), 500); // Trigger re-decrypt
       } catch (e: any) {
           alert("Failed: " + e.message);
       }
@@ -164,16 +205,36 @@ const RestaurantDashboard: React.FC = () => {
       <main className="p-4">
           {activeTab === 'orders' && (
               <div className="space-y-4">
-                  <h2 className="font-bold text-lg mb-2">Live Orders</h2>
+                  <h2 className="font-bold text-lg mb-2 flex items-center justify-between">
+                      <span>Live Orders</span>
+                      {notifications.length > 0 && notifications[0].read === false && (
+                          <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full animate-pulse">New!</span>
+                      )}
+                  </h2>
                   {myOrders.length === 0 && <p className="text-center text-slate-400 py-10">No orders yet.</p>}
                   {myOrders.map(order => (
-                      <div key={order.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                          <div className="flex justify-between items-start mb-3">
+                      <div key={order.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 relative group">
+                          {/* Delete Button (Top Right) */}
+                          <button 
+                            onClick={() => { if(confirm("Delete this order?")) deleteOrder(order.id) }}
+                            className="absolute top-2 right-2 text-slate-300 hover:text-red-500 p-1"
+                          >
+                              <XCircle className="w-4 h-4" />
+                          </button>
+
+                          <div className="flex justify-between items-start mb-3 pr-6">
                               <div>
                                   <div className="flex items-center gap-2">
                                       <span className="font-bold text-lg">PIN: {order.pickup_code}</span>
-                                      {!order.paid && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded font-bold">UNPAID</span>}
-                                      {order.paid && <span className="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded font-bold">PAID</span>}
+                                      <span className={`text-xs px-2 py-0.5 rounded font-bold uppercase ${
+                                          order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                                          order.status === 'accepted' ? 'bg-indigo-100 text-indigo-700' :
+                                          order.status === 'ready' ? 'bg-orange-100 text-orange-700' :
+                                          order.status === 'declined' ? 'bg-red-100 text-red-700' :
+                                          'bg-green-100 text-green-700'
+                                      }`}>
+                                          {order.status}
+                                      </span>
                                   </div>
                                   <div className="flex items-center gap-1 mt-1">
                                       <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 border border-slate-200 font-mono">
@@ -199,16 +260,25 @@ const RestaurantDashboard: React.FC = () => {
                           </div>
 
                           <div className="flex gap-2">
-                              {!order.paid && (
-                                  <button 
-                                    onClick={() => markOrderPaid(order.id)}
-                                    className="flex-1 bg-indigo-50 text-indigo-700 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1"
-                                  >
-                                      <Wallet className="w-4 h-4" /> Mark Paid
-                                  </button>
+                              {/* New Flow: Pending -> Accept/Decline */}
+                              {order.status === 'pending' && (
+                                  <>
+                                    <button 
+                                        onClick={() => acceptOrder(order.id)}
+                                        className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1 shadow-sm hover:bg-green-700"
+                                    >
+                                        <Check className="w-4 h-4" /> Accept
+                                    </button>
+                                    <button 
+                                        onClick={() => declineOrder(order.id)}
+                                        className="flex-1 bg-red-50 text-red-600 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1 border border-red-100 hover:bg-red-100"
+                                    >
+                                        <XCircle className="w-4 h-4" /> Decline
+                                    </button>
+                                  </>
                               )}
-                              
-                              {order.status === 'pending' && order.paid && (
+
+                              {order.status === 'accepted' && (
                                   <button 
                                     onClick={() => markOrderReady(order.id)}
                                     className="flex-1 bg-orange-100 text-orange-700 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1"
@@ -220,6 +290,12 @@ const RestaurantDashboard: React.FC = () => {
                               {order.status === 'ready' && (
                                   <div className="flex-1 bg-green-50 text-green-700 py-2 rounded-lg text-sm font-bold text-center border border-green-200">
                                       Ready for Pickup
+                                  </div>
+                              )}
+                              
+                              {order.status === 'declined' && (
+                                  <div className="flex-1 bg-red-50 text-red-700 py-2 rounded-lg text-sm font-bold text-center border border-red-200">
+                                      Declined
                                   </div>
                               )}
                           </div>
@@ -367,13 +443,13 @@ const RestaurantDashboard: React.FC = () => {
                               <div className="flex items-center gap-2">
                                   <input 
                                     className="w-full border p-2 rounded-lg outline-none focus:border-indigo-500"
-                                    placeholder={restaurant.upi_id || 'Enter UPI ID'}
+                                    placeholder={decryptedUpi}
                                     value={editUpi}
                                     onChange={e => setEditUpi(e.target.value)}
                                   />
                               </div>
                               <p className="text-xs text-slate-400 mt-1">
-                                  Current: {restaurant.upi_id || 'Not Set'}
+                                  Current (Decrypted): {decryptedUpi}
                               </p>
                           </div>
                           <button type="submit" className="bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2">
