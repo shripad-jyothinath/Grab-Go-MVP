@@ -10,15 +10,21 @@ import {
   Users,
   CheckCircle,
   AlertTriangle,
-  Star
+  Star,
+  ToggleLeft,
+  ToggleRight,
+  Beaker
 } from 'lucide-react';
 
 const AdminDashboard: React.FC = () => {
-  const { logout, restaurants, deleteRestaurant, approveRestaurant, orders, user, getRestaurantStats } = useApp();
+  const { logout, restaurants, deleteRestaurant, approveRestaurant, orders, user, getRestaurantStats, isTestMode, toggleTestMode } = useApp();
 
   const totalRevenue = orders.reduce((sum, order) => sum + order.total, 0);
   const totalOrders = orders.length;
 
+  // Filter out the test restaurants from "Pending" list if they accidentally appear (though filtered in context, safe to be sure)
+  // AppContext filters mocks out of `restaurants` unless TestMode is ON. 
+  // If TestMode is ON, mocks appear in `restaurants`. Mocks are verified=true usually.
   const pendingRestaurants = restaurants.filter(r => !r.verified);
   const activeRestaurants = restaurants.filter(r => r.verified);
 
@@ -34,7 +40,20 @@ const AdminDashboard: React.FC = () => {
             </h1>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-400">Welcome, {user?.name}</span>
+            {/* Test Mode Toggle */}
+            <div className="flex items-center gap-2 mr-4 bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
+               <Beaker className={`w-4 h-4 ${isTestMode ? 'text-yellow-400' : 'text-slate-500'}`} />
+               <span className="text-xs font-bold text-slate-300">Test Mode</span>
+               <button onClick={toggleTestMode} className="focus:outline-none">
+                  {isTestMode ? (
+                      <ToggleRight className="w-8 h-8 text-yellow-400 transition" />
+                  ) : (
+                      <ToggleLeft className="w-8 h-8 text-slate-500 transition" />
+                  )}
+               </button>
+            </div>
+
+            <span className="text-sm text-slate-400 hidden md:inline">Welcome, {user?.name}</span>
             <button 
               onClick={logout} 
               className="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-2"
@@ -47,6 +66,16 @@ const AdminDashboard: React.FC = () => {
 
       <main className="max-w-6xl mx-auto px-4 py-8">
         
+        {isTestMode && (
+          <div className="mb-6 bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 rounded-xl flex items-center gap-3 animate-pulse">
+            <AlertTriangle className="w-5 h-5" />
+            <div>
+              <p className="font-bold">System in Test Mode</p>
+              <p className="text-sm">Mock restaurants injected. Public payments disabled. Turn off to resume normal operations.</p>
+            </div>
+          </div>
+        )}
+
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
           <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
@@ -163,6 +192,9 @@ const AdminDashboard: React.FC = () => {
                              <img src={restaurant.image} alt={restaurant.name} className="w-full h-full object-cover" />
                           </div>
                           <span className="font-semibold text-slate-700">{restaurant.name}</span>
+                          {restaurant.id.startsWith('test-') && (
+                              <span className="bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded font-mono">TEST</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
@@ -176,17 +208,21 @@ const AdminDashboard: React.FC = () => {
                           </div>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => {
-                            if (window.confirm(`Are you sure you want to delete ${restaurant.name}? This action cannot be undone.`)) {
-                              deleteRestaurant(restaurant.id);
-                            }
-                          }}
-                          className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded-lg transition"
-                          title="Delete Restaurant"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {!restaurant.id.startsWith('test-') ? (
+                            <button
+                            onClick={() => {
+                                if (window.confirm(`Are you sure you want to delete ${restaurant.name}? This action cannot be undone.`)) {
+                                deleteRestaurant(restaurant.id);
+                                }
+                            }}
+                            className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded-lg transition"
+                            title="Delete Restaurant"
+                            >
+                            <Trash2 className="w-4 h-4" />
+                            </button>
+                        ) : (
+                            <span className="text-xs text-slate-400 italic">Mock Data</span>
+                        )}
                       </td>
                     </tr>
                   )})

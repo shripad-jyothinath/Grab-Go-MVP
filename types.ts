@@ -1,3 +1,4 @@
+
 export type UserRole = 'customer' | 'restaurant_owner' | 'admin';
 
 export interface Profile {

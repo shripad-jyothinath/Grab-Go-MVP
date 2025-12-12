@@ -43,6 +43,10 @@ interface AppContextType {
   deleteRestaurant: (id: string) => Promise<void>;
   approveRestaurant: (id: string) => Promise<void>;
   getRestaurantStats: (restaurantId: string) => { averageRating: number; reviewCount: number };
+  
+  // System Config
+  isTestMode: boolean;
+  toggleTestMode: () => Promise<void>;
 
   // Cart
   cart: CartItem[];
@@ -58,6 +62,34 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+// --- Mock Data for Test Mode ---
+const TEST_RESTAURANTS: Restaurant[] = [
+    {
+        id: 'test-r1',
+        owner_id: 'test-owner',
+        name: '[TEST] Burger Joint',
+        cuisine: 'Fast Food',
+        verified: true,
+        banned: false,
+        payment_method: 'upi',
+        created_at: new Date().toISOString(),
+        image: 'https://images.unsplash.com/photo-1571091718767-18b5b1457add?w=800'
+    },
+    {
+        id: 'test-r2',
+        owner_id: 'test-owner',
+        name: '[TEST] Pizza Palace',
+        cuisine: 'Italian',
+        verified: true,
+        banned: false,
+        payment_method: 'upi',
+        created_at: new Date().toISOString(),
+        image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800'
+    }
+];
+
+const CONFIG_REST_NAME = '__APP_CONFIG__';
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<Profile | null>(null);
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
@@ -70,6 +102,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [ratings, setRatings] = useState<Rating[]>([]);
+
+  const [isTestMode, setIsTestMode] = useState(false);
 
   // --- Initialization & Data Fetching ---
   useEffect(() => {
@@ -89,17 +123,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       }
 
-      // 2. Fetch Restaurants
-      const { data: rData } = await supabase.from('restaurants').select('*');
-      if (rData && mounted) {
-          // Add fallback images if missing from DB
-          const mapped = rData.map((r: any) => ({
-              ...r,
-              image: r.image || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800',
-              cuisine: r.cuisine || 'Multi-Cuisine'
-          }));
-          setRestaurants(mapped);
-      }
+      await refreshRestaurants(mounted);
 
       // 3. Fetch Menu Items (All for now, filter in UI)
       const { data: mData } = await supabase.from('menu_items').select('*');
@@ -110,10 +134,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     init();
 
-    // 4. Realtime Subscription for Orders
+    // 4. Realtime Subscription for Orders & Restaurants (to catch config changes)
     const orderChannel = supabase.channel('public:orders')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
          refreshOrders(); // Refetch on any change for simplicity
+      })
+      .subscribe();
+
+    const restChannel = supabase.channel('public:restaurants')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurants' }, () => {
+         refreshRestaurants(true);
       })
       .subscribe();
 
@@ -128,8 +158,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       mounted = false;
       supabase.removeChannel(orderChannel);
       supabase.removeChannel(menuChannel);
+      supabase.removeChannel(restChannel);
     };
   }, []);
+
+  const refreshRestaurants = async (mounted: boolean) => {
+      // Fetch Restaurants
+      const { data: rData } = await supabase.from('restaurants').select('*');
+      if (rData && mounted) {
+          // Check for config row
+          const configRow = rData.find((r: any) => r.name === CONFIG_REST_NAME);
+          const testModeActive = configRow ? configRow.banned : false;
+          setIsTestMode(testModeActive);
+
+          // Add fallback images if missing from DB, and filter out config row
+          let mapped = rData
+            .filter((r: any) => r.name !== CONFIG_REST_NAME)
+            .map((r: any) => ({
+              ...r,
+              image: r.image || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800',
+              cuisine: r.cuisine || 'Multi-Cuisine'
+            }));
+          
+          // Inject Test Restaurants if mode is active
+          if (testModeActive) {
+             mapped = [...mapped, ...TEST_RESTAURANTS];
+          }
+
+          setRestaurants(mapped);
+      }
+  };
 
   const refreshOrders = async () => {
       if (!user) return;
@@ -258,6 +316,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
      return { averageRating: avg, reviewCount: count };
   };
 
+  // --- System Config Logic ---
+  const toggleTestMode = async () => {
+      // 1. Fetch current config row
+      const { data: existing } = await supabase.from('restaurants').select('*').eq('name', CONFIG_REST_NAME).single();
+      
+      let newStatus = !isTestMode;
+
+      if (!existing) {
+          // Create Config Row if missing
+          // Use user.id if available, else a dummy ID if bypassing
+          const ownerId = user?.id || 'admin-system'; 
+          await supabase.from('restaurants').insert([{
+              owner_id: ownerId,
+              name: CONFIG_REST_NAME,
+              payment_method: 'upi',
+              verified: false,
+              banned: newStatus // Use banned col as the toggle
+          }]);
+      } else {
+          // Update existing
+          newStatus = !existing.banned; // Toggle current DB state
+          await supabase.from('restaurants').update({ banned: newStatus }).eq('id', existing.id);
+      }
+
+      setIsTestMode(newStatus);
+      // Refresh to update injected mocks
+      await refreshRestaurants(true);
+  };
+
   // --- Cart ---
   const addToCart = (item: MenuItem) => {
     setCart(prev => {
@@ -283,7 +370,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       addMenuItem, deleteMenuItem,
       deleteRestaurant, approveRestaurant, getRestaurantStats,
       cart, addToCart, removeFromCart, updateCartQuantity, clearCart,
-      notifications, ratings
+      notifications, ratings,
+      isTestMode, toggleTestMode
     }}>
       {children}
     </AppContext.Provider>

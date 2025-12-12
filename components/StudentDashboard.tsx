@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Restaurant, MenuItem } from '../types';
-import { ShoppingBag, Search, Plus, Minus, Zap, Bell, X, Star, ArrowRight, Store, ArrowLeft, QrCode, CheckCircle2 } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, Zap, Bell, X, Star, ArrowRight, Store, ArrowLeft, QrCode, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 const StudentDashboard: React.FC = () => {
-  const { user, logout, restaurants, menu, cart, addToCart, removeFromCart, updateCartQuantity, placeOrder, clearCart, orders } = useApp();
+  const { user, logout, restaurants, menu, cart, addToCart, removeFromCart, updateCartQuantity, placeOrder, clearCart, orders, isTestMode } = useApp();
   
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -16,6 +16,13 @@ const StudentDashboard: React.FC = () => {
 
   const handleCheckout = async () => {
       if (!selectedRestaurant) return;
+      
+      // Block checkout if in Test Mode
+      if (isTestMode) {
+          alert("Test Mode Active: Payments are disabled. Maintenance in progress.");
+          return;
+      }
+
       try {
           const total = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
           const response = await placeOrder(selectedRestaurant.id, cart, total);
@@ -107,6 +114,12 @@ const StudentDashboard: React.FC = () => {
                   <div className="w-9"></div>
               </header>
               <div className="p-4 space-y-4">
+                  {isTestMode && (
+                      <div className="bg-yellow-50 p-3 rounded-xl border border-yellow-200 text-yellow-800 text-sm flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4" />
+                          <span>Payments are disabled during maintenance.</span>
+                      </div>
+                  )}
                   {cart.map(item => (
                       <div key={item.id} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl">
                           <div>
@@ -125,8 +138,12 @@ const StudentDashboard: React.FC = () => {
                           <span>Total</span>
                           <span>₹{total.toFixed(2)}</span>
                       </div>
-                      <button onClick={handleCheckout} className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl">
-                          Confirm Order
+                      <button 
+                        onClick={handleCheckout} 
+                        disabled={isTestMode}
+                        className={`w-full font-bold py-4 rounded-xl ${isTestMode ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-slate-900 text-white'}`}
+                      >
+                          {isTestMode ? 'Checkout Disabled' : 'Confirm Order'}
                       </button>
                   </div>
               </div>
@@ -173,6 +190,11 @@ const StudentDashboard: React.FC = () => {
                                       <h3 className="font-bold text-lg">{r.name}</h3>
                                       <p className="text-xs opacity-90">{r.cuisine}</p>
                                   </div>
+                                  {r.id.startsWith('test-') && (
+                                      <div className="absolute top-2 right-2 bg-yellow-500 text-white text-[10px] font-bold px-2 py-1 rounded-full">
+                                          TEST MODE
+                                      </div>
+                                  )}
                               </div>
                           </button>
                       ))}
@@ -197,6 +219,12 @@ const StudentDashboard: React.FC = () => {
           </div>
           
           <div className="p-4 space-y-4">
+              {restaurantItems.length === 0 && (
+                  <div className="text-center text-slate-400 py-10">
+                      <p>Menu items usually appear here.</p>
+                      {selectedRestaurant.id.startsWith('test-') && <p className="text-xs">This is a mock restaurant.</p>}
+                  </div>
+              )}
               {restaurantItems.map(item => (
                   <div key={item.id} className="bg-white p-3 rounded-xl shadow-sm flex justify-between gap-4">
                       <div className="flex-1">
