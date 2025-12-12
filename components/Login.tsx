@@ -25,13 +25,20 @@ const Login: React.FC = () => {
     try {
         if (mode === 'signin') {
             const { error } = await login(email, password);
-            if (error) setError(error.message);
+            if (error) {
+                // Friendly error handling for email confirmation
+                if (error.message.includes('Email not confirmed')) {
+                    setError("Please verify your email address. Check your inbox for the confirmation link.");
+                } else {
+                    setError(error.message);
+                }
+            }
         } else {
             const extra = role === 'restaurant_owner' ? { restaurantName } : undefined;
             const { error } = await signup(email, password, name, phone, role, extra);
             if (error) setError(error.message);
             else {
-                alert("Sign up successful! Please check your email to confirm.");
+                alert("Sign up successful! Please check your email inbox to verify your account.");
                 setMode('signin');
             }
         }
@@ -50,7 +57,7 @@ const Login: React.FC = () => {
         <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-orange-400 to-indigo-600"></div>
 
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-slate-800 mb-2">CampusCrave</h1>
+          <h1 className="text-3xl font-bold text-slate-800 mb-2">Grab&Go</h1>
           <p className="text-slate-500">{mode === 'signin' ? 'Welcome back' : 'Create an account'}</p>
         </div>
 
@@ -60,8 +67,9 @@ const Login: React.FC = () => {
         </div>
 
         {error && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm flex items-center gap-2">
-                <AlertCircle className="w-4 h-4" /> {error}
+            <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" /> 
+                <span>{error}</span>
             </div>
         )}
 
@@ -124,6 +132,14 @@ const Login: React.FC = () => {
            <button disabled={isSubmitting} className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition flex items-center justify-center gap-2">
                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : (mode === 'signin' ? 'Sign In' : 'Create Account')}
            </button>
+           
+           {mode === 'signin' && (
+               <div className="text-center mt-4">
+                   <p className="text-xs text-slate-400">
+                       Forgot password? Contact support.
+                   </p>
+               </div>
+           )}
         </form>
       </div>
     </div>

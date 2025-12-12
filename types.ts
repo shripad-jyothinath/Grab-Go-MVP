@@ -21,9 +21,9 @@ export interface Restaurant {
   upi_qr_url?: string;
   razorpay_key_id?: string;
   created_at: string;
-  // Local helper for UI (not in DB usually, but we can assume joins or generic image)
+  // Local helper for UI (defaults provided if missing in DB)
   image?: string; 
-  cuisine?: string; // You might want to add this to your SQL schema if needed, or store in JSON
+  cuisine?: string; 
 }
 
 export interface MenuItem {
@@ -33,8 +33,9 @@ export interface MenuItem {
   description: string;
   price: number;
   photo_url?: string;
-  category?: string; // Optional in SQL schema provided, but good for UI
   created_at?: string;
+  // Category is not in SQL schema, handling as optional for UI
+  category?: string;
 }
 
 export interface CartItem extends MenuItem {
@@ -56,12 +57,11 @@ export interface Order {
   created_at: string;
   updated_at: string;
   
-  // Joins for UI convenience
+  // Joins (fetched via select string)
   profiles?: { name: string; phone: string };
   restaurants?: { name: string };
 }
 
-// Helper for UI notifications
 export interface AppNotification {
   id: string;
   userId: string;

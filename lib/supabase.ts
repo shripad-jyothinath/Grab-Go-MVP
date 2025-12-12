@@ -1,8 +1,23 @@
 import { createClient } from '@supabase/supabase-js';
 
-// NOTE: In a real deployment, these would come from process.env.NEXT_PUBLIC_...
-// For this environment, we check if they exist. If not, the AppContext will handle "Simulation Mode".
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://placeholder-url.supabase.co';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'placeholder-key';
+// Safe environment variable access for browser environments
+const getEnv = (key: string) => {
+  try {
+    // @ts-ignore
+    return typeof process !== 'undefined' ? process.env[key] : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// NOTE: In a real deployment, these would come from process.env.NEXT_PUBLIC_...
+const SUPABASE_URL = getEnv('SUPABASE_URL') || 'https://zhnqltgcfpxnrmozwdih.supabase.co';
+const SUPABASE_ANON_KEY = getEnv('SUPABASE_ANON_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpobnFsdGdjZnB4bnJtb3p3ZGloIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1MTkxMTcsImV4cCI6MjA4MTA5NTExN30.Oh_5J_qK34ha4kOP8yTjs20ViUIkd76B2jJzlNZF7_0';
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+});

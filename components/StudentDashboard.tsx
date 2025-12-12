@@ -140,7 +140,7 @@ const StudentDashboard: React.FC = () => {
           <div className="min-h-screen bg-slate-50 pb-20">
               <header className="bg-white p-4 sticky top-0 z-10 shadow-sm flex justify-between items-center">
                   <div>
-                      <h1 className="font-bold text-xl">CampusCrave</h1>
+                      <h1 className="font-bold text-xl">Grab&Go</h1>
                       <p className="text-sm text-slate-500">Welcome, {user?.name}</p>
                   </div>
                   <button onClick={logout} className="text-sm text-red-500">Logout</button>

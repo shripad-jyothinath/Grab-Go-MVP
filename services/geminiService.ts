@@ -1,10 +1,17 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
+// Safe access helper
+const getApiKey = () => {
+    try {
+        // @ts-ignore
+        return typeof process !== 'undefined' ? process.env.API_KEY : '';
+    } catch {
+        return '';
+    }
+}
+
 // Initialize Gemini
-// Note: In a real production app, you might proxy this through a backend to protect the key,
-// or use the user's key as requested in specific scenarios. 
-// For this demo, we assume the environment variable is injected securely or we use the instance directly.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
 export const parseMenuFromImage = async (base64Image: string): Promise<any[]> => {
   try {
