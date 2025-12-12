@@ -88,6 +88,34 @@ export const apiUpdateRestaurantSettings = async (restaurantId: string, updates:
     if (error) throw new Error(error.message);
 }
 
+export const apiUploadCoverImage = async (file: File) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Not authenticated");
+
+    // Generate unique filename: userId/timestamp.ext
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${session.user.id}/${Date.now()}.${fileExt}`;
+
+    // Upload to 'restaurant-covers' bucket
+    const { error: uploadError } = await supabase.storage
+        .from('restaurant-covers')
+        .upload(fileName, file, {
+            cacheControl: '3600',
+            upsert: false
+        });
+
+    if (uploadError) {
+        throw new Error("Upload failed: " + uploadError.message);
+    }
+
+    // Get Public URL
+    const { data } = supabase.storage
+        .from('restaurant-covers')
+        .getPublicUrl(fileName);
+
+    return data.publicUrl;
+};
+
 export const apiCreateOrder = async (restaurantId: string, items: CartItem[], total: number) => {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error("Not authenticated");

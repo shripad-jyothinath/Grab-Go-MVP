@@ -22,7 +22,8 @@ import {
     Settings,
     Save,
     XCircle,
-    Check
+    Check,
+    Image as ImageIcon
 } from 'lucide-react';
 import { parseMenuFromImage } from '../services/geminiService';
 
@@ -30,7 +31,7 @@ const RestaurantDashboard: React.FC = () => {
   const { 
       user, restaurant, orders, notifications,
       markOrderPaid, markOrderReady, acceptOrder, declineOrder, deleteOrder, completeOrder, 
-      logout, menu, addMenuItem, deleteMenuItem, updateRestaurantSettings 
+      logout, menu, addMenuItem, deleteMenuItem, updateRestaurantSettings, uploadRestaurantImage 
   } = useApp();
   
   const [verificationCode, setVerificationCode] = useState('');
@@ -46,6 +47,7 @@ const RestaurantDashboard: React.FC = () => {
   // Settings State
   const [editUpi, setEditUpi] = useState('');
   const [decryptedUpi, setDecryptedUpi] = useState('Loading...');
+  const [isUploading, setIsUploading] = useState(false);
 
   // Decrypt UPI when tab is active
   useEffect(() => {
@@ -123,6 +125,21 @@ const RestaurantDashboard: React.FC = () => {
           setTimeout(() => setActiveTab('settings'), 500); // Trigger re-decrypt
       } catch (e: any) {
           alert("Failed: " + e.message);
+      }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      
+      try {
+          setIsUploading(true);
+          await uploadRestaurantImage(file);
+          alert("Cover image updated successfully!");
+      } catch (e: any) {
+          alert("Failed to upload image: " + e.message);
+      } finally {
+          setIsUploading(false);
       }
   };
 
@@ -433,6 +450,25 @@ const RestaurantDashboard: React.FC = () => {
 
           {activeTab === 'settings' && (
               <div className="p-4 space-y-6">
+                  {/* Cover Image Upload */}
+                  <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+                      <h2 className="font-bold text-lg mb-4 flex items-center gap-2">
+                          <ImageIcon className="w-5 h-5 text-slate-500" /> Cover Image
+                      </h2>
+                      
+                      {restaurant.image && (
+                          <div className="mb-4 w-full h-40 rounded-lg overflow-hidden bg-slate-100 relative">
+                              <img src={restaurant.image} className="w-full h-full object-cover" />
+                          </div>
+                      )}
+
+                      <label className="flex items-center justify-center w-full p-4 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:bg-slate-50 transition gap-2 text-slate-500">
+                           {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
+                           <span className="text-sm font-bold">{isUploading ? 'Uploading...' : 'Upload New Cover'}</span>
+                           <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isUploading} />
+                      </label>
+                  </div>
+
                   <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
                       <h2 className="font-bold text-lg mb-4 flex items-center gap-2">
                           <Settings className="w-5 h-5 text-slate-500" /> Payment Settings

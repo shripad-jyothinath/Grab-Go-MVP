@@ -14,7 +14,8 @@ import {
   apiSignup,
   checkAdminPrivileges,
   apiUpdateRestaurantSettings,
-  apiDeleteOrder
+  apiDeleteOrder,
+  apiUploadCoverImage
 } from '../services/api';
 import { Profile, Restaurant, MenuItem, Order, CartItem, AppNotification, Rating } from '../types';
 
@@ -29,6 +30,7 @@ interface AppContextType {
   logout: () => Promise<void>;
   updateProfile: (name: string, phone: string) => Promise<void>;
   updateRestaurantSettings: (settings: { upi_id?: string }) => Promise<void>;
+  uploadRestaurantImage: (file: File) => Promise<void>;
 
   // Data
   restaurants: Restaurant[];
@@ -394,6 +396,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       saveToCache(CACHE_REST_KEY, updated);
   };
 
+  const uploadRestaurantImage = async (file: File) => {
+      if (!restaurant) return;
+      if (restaurant.id.startsWith('test-r')) {
+          alert("Cannot upload images for test restaurants");
+          return;
+      }
+      // 1. Upload
+      const publicUrl = await apiUploadCoverImage(file);
+      
+      // 2. Update DB
+      await apiUpdateRestaurantSettings(restaurant.id, { image: publicUrl });
+      
+      // 3. Update State
+      const updated = { ...restaurant, image: publicUrl };
+      setRestaurant(updated);
+      saveToCache(CACHE_REST_KEY, updated);
+      setRestaurants(prev => prev.map(r => r.id === restaurant.id ? updated : r));
+  };
+
   const login = async (email: string, pass: string) => {
     // New Secure Hash Check
     const isAdmin = await checkAdminPrivileges(email, pass);
@@ -579,7 +600,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   return (
     <AppContext.Provider value={{
-      user, restaurant, loading, login, signup, logout, updateProfile, updateRestaurantSettings,
+      user, restaurant, loading, login, signup, logout, updateProfile, updateRestaurantSettings, uploadRestaurantImage,
       restaurants, menu, orders,
       placeOrder, markOrderPaid, markOrderReady, acceptOrder, declineOrder, deleteOrder, completeOrder,
       addMenuItem, deleteMenuItem,
