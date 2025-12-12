@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { ChefHat, GraduationCap, Lock, Mail, User, Phone, Loader2, Store, AlertCircle, ArrowRight } from 'lucide-react';
+import { ChefHat, GraduationCap, Lock, Mail, User, Phone, Loader2, Store, AlertCircle, ArrowRight, Wallet } from 'lucide-react';
 
 const Login: React.FC = () => {
   const { login, signup, loading } = useApp();
@@ -16,6 +16,7 @@ const Login: React.FC = () => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [restaurantName, setRestaurantName] = useState('');
+  const [upiId, setUpiId] = useState('');
 
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -37,7 +38,7 @@ const Login: React.FC = () => {
             }
         } else {
             // SignUp
-            const { error } = await signup(email, password, name, phone, role, { restaurantName });
+            const { error } = await signup(email, password, name, phone, role, { restaurantName, upiId });
             if (error) setError(error.message);
             else {
                 alert("Account created! You may need to verify your email depending on system settings.");
@@ -111,6 +112,7 @@ const Login: React.FC = () => {
                     </div>
                 </div>
                 {role === 'restaurant_owner' && (
+                    <>
                     <div>
                         <label className="block text-slate-700 font-bold mb-1 text-xs uppercase">Restaurant Name</label>
                         <div className="flex items-center bg-slate-50 rounded-lg px-3 py-2 border border-slate-200">
@@ -118,6 +120,14 @@ const Login: React.FC = () => {
                             <input required className="bg-transparent w-full outline-none text-slate-800" value={restaurantName} onChange={e => setRestaurantName(e.target.value)} placeholder="Tasty Bites" />
                         </div>
                     </div>
+                    <div>
+                        <label className="block text-slate-700 font-bold mb-1 text-xs uppercase">UPI ID (For Payments)</label>
+                        <div className="flex items-center bg-slate-50 rounded-lg px-3 py-2 border border-slate-200">
+                            <Wallet className="w-4 h-4 text-slate-400 mr-2" />
+                            <input required className="bg-transparent w-full outline-none text-slate-800" value={upiId} onChange={e => setUpiId(e.target.value)} placeholder="merchant@upi" />
+                        </div>
+                    </div>
+                    </>
                 )}
                </>
            )}

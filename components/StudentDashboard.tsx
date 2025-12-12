@@ -24,7 +24,8 @@ import {
   ChevronRight,
   Save,
   Loader2,
-  Lock
+  Lock,
+  Wallet
 } from 'lucide-react';
 import { TEST_RESTAURANTS } from '../context/AppContext';
 
@@ -32,7 +33,7 @@ const StudentDashboard: React.FC = () => {
   const { 
       user, logout, updateProfile, 
       restaurants, menu, cart, 
-      addToCart, updateCartQuantity, placeOrder, clearCart, 
+      addToCart, updateCartQuantity, placeOrder, clearCart, markOrderPaid,
       orders, isTestMode, isTestUser, enableTestUser, loginAsTestRestaurant 
   } = useApp();
   
@@ -82,14 +83,24 @@ const StudentDashboard: React.FC = () => {
           if (response && response.order) {
               setLastOrder({
                   ...response.order, 
-                  restaurant: rest 
+                  restaurant: rest,
+                  displayId: response.order.id.slice(0, 8).toUpperCase()
               });
               setSelectedRestaurant(null);
-              setActiveTab('home');
+              // Do not switch tab immediately, show modal
           }
       } catch (e) {
           alert("Order failed. Please try again.");
       }
+  }
+
+  const handlePaymentComplete = async () => {
+     if(lastOrder) {
+         await markOrderPaid(lastOrder.id);
+         setLastOrder(null);
+         setActiveTab('orders');
+         alert("Order marked as paid! Wait for restaurant confirmation.");
+     }
   }
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -128,9 +139,10 @@ const StudentDashboard: React.FC = () => {
       }
   };
 
-  const buildUpiLink = (orderId: string, pickupCode: string, total: number, rest: Restaurant) => {
+  const buildUpiLink = (orderId: string, total: number, rest: Restaurant) => {
       if (!rest.upi_id) return '#';
-      const tn = `Order ${orderId} | Code ${pickupCode}`;
+      // tn = Transaction Note = Order ID
+      const tn = `Order ${orderId}`;
       const params = new URLSearchParams({
           pa: rest.upi_id,
           pn: rest.name,
@@ -144,16 +156,15 @@ const StudentDashboard: React.FC = () => {
   // --- Renderers ---
   
   if (lastOrder) {
-      const isRazorpay = lastOrder.restaurant.payment_method === 'razorpay';
-      const upiLink = !isRazorpay ? buildUpiLink(lastOrder.displayId || lastOrder.id.substr(0,4), lastOrder.pickup_code, lastOrder.total, lastOrder.restaurant) : '';
+      const upiLink = buildUpiLink(lastOrder.displayId, lastOrder.total, lastOrder.restaurant);
 
       return (
           <div className="fixed inset-0 z-[60] bg-white flex flex-col items-center justify-center p-6">
               <div className="bg-white rounded-2xl w-full max-w-md p-6 text-center animate-fade-in-up">
-                  <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <CheckCircle2 className="w-8 h-8" />
+                  <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Wallet className="w-8 h-8" />
                   </div>
-                  <h2 className="text-2xl font-bold text-slate-800 mb-2">Order Placed!</h2>
+                  <h2 className="text-2xl font-bold text-slate-800 mb-2">Payment Required</h2>
                   
                   {lastOrder.is_test && (
                       <div className="bg-yellow-100 text-yellow-800 text-xs font-bold px-3 py-1 rounded-full mb-4 inline-block">
@@ -161,16 +172,36 @@ const StudentDashboard: React.FC = () => {
                       </div>
                   )}
 
-                  <p className="text-slate-500 mb-6">Pickup Code: <span className="font-mono font-bold text-slate-900 text-lg">{lastOrder.pickup_code}</span></p>
-                  
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
-                      <p className="text-sm font-semibold text-slate-600 mb-2">Total Amount</p>
-                      <p className="text-3xl font-bold text-slate-900">₹{lastOrder.total.toFixed(2)}</p>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 text-left">
+                      <div className="flex justify-between mb-2">
+                          <span className="text-slate-500 font-bold text-sm">Amount</span>
+                          <span className="text-xl font-bold text-slate-900">₹{lastOrder.total.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between mb-2">
+                          <span className="text-slate-500 font-bold text-sm">Order ID</span>
+                          <span className="text-slate-900 font-mono font-bold">{lastOrder.displayId}</span>
+                      </div>
+                      <div className="flex justify-between">
+                          <span className="text-slate-500 font-bold text-sm">Secure PIN</span>
+                          <span className="text-slate-900 font-mono font-bold">{lastOrder.pickup_code}</span>
+                      </div>
                   </div>
+                  
+                  <p className="text-sm text-slate-500 mb-6 px-4">
+                      Please attach the note <strong>"Order {lastOrder.displayId}"</strong> when paying via UPI.
+                  </p>
 
-                  <button onClick={() => setLastOrder(null)} className="mt-6 text-slate-500 font-medium hover:text-slate-800">
-                      Close & View Status
-                  </button>
+                  <div className="space-y-3">
+                      <a href={upiLink} target="_blank" rel="noreferrer" className="block w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition">
+                          Pay with UPI
+                      </a>
+                      <button onClick={handlePaymentComplete} className="w-full bg-white border border-slate-200 text-slate-700 font-bold py-3 rounded-xl hover:bg-slate-50 transition">
+                          I have Paid
+                      </button>
+                      <button onClick={() => setLastOrder(null)} className="text-xs text-slate-400 font-medium hover:text-slate-600 mt-2">
+                          Close (Pay Later)
+                      </button>
+                  </div>
               </div>
           </div>
       );
@@ -405,7 +436,12 @@ const StudentDashboard: React.FC = () => {
                         <div key={o.id} className={`p-4 rounded-xl border shadow-sm ${o.is_test ? 'bg-yellow-50 border-yellow-200' : 'bg-white border-slate-100'}`}>
                             <div className="flex justify-between items-start mb-2">
                                 <div>
-                                    <p className="font-bold text-slate-800">Order #{o.pickup_code}</p>
+                                    <div className="flex items-center gap-2">
+                                        <p className="font-bold text-slate-800">PIN: {o.pickup_code}</p>
+                                        <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 border border-slate-200">
+                                            #{o.id.slice(0,8).toUpperCase()}
+                                        </span>
+                                    </div>
                                     <p className="text-xs text-slate-500">{new Date(o.created_at).toLocaleDateString()} at {new Date(o.created_at).toLocaleTimeString()}</p>
                                 </div>
                                 <div className="flex flex-col items-end gap-1">
@@ -477,7 +513,7 @@ const StudentDashboard: React.FC = () => {
                                 disabled={isTestMode && !isTestUser}
                                 className={`w-full font-bold py-4 rounded-xl ${isTestMode && !isTestUser ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-slate-900 text-white'}`}
                             >
-                                {isTestMode && !isTestUser ? 'Checkout Disabled' : (isTestMode ? 'Place Test Order' : 'Confirm Order')}
+                                {isTestMode && !isTestUser ? 'Checkout Disabled' : 'Proceed to Payment'}
                             </button>
                         </div>
                       </>

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
+import { encryptData, decryptData, getMockUpiId } from '../lib/security';
 import { 
   apiCreateOrder, 
   apiCreateTestOrder,
@@ -11,7 +12,8 @@ import {
   apiAddMenuItem,
   apiDeleteMenuItem,
   apiSignup,
-  checkAdminPrivileges
+  checkAdminPrivileges,
+  apiUpdateRestaurantSettings
 } from '../services/api';
 import { Profile, Restaurant, MenuItem, Order, CartItem, AppNotification, Rating } from '../types';
 
@@ -25,6 +27,7 @@ interface AppContextType {
   signup: (email: string, pass: string, name: string, phone: string, role: Profile['role'], extra?: any) => Promise<any>;
   logout: () => Promise<void>;
   updateProfile: (name: string, phone: string) => Promise<void>;
+  updateRestaurantSettings: (settings: { upi_id?: string }) => Promise<void>;
 
   // Data
   restaurants: Restaurant[];
@@ -70,6 +73,7 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 // --- Mock Data for Test Mode ---
+// Encrypted UPI injection happens here
 export const TEST_RESTAURANTS: Restaurant[] = [
     {
         id: 'test-r1',
@@ -79,6 +83,7 @@ export const TEST_RESTAURANTS: Restaurant[] = [
         verified: true,
         banned: false,
         payment_method: 'upi',
+        upi_id: getMockUpiId(), // Injected from security module
         created_at: new Date().toISOString(),
         image: 'https://images.unsplash.com/photo-1571091718767-18b5b1457add?w=800'
     },
@@ -90,6 +95,7 @@ export const TEST_RESTAURANTS: Restaurant[] = [
         verified: true,
         banned: false,
         payment_method: 'upi',
+        upi_id: getMockUpiId(), // Injected from security module
         created_at: new Date().toISOString(),
         image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800'
     }
@@ -106,31 +112,13 @@ const TEST_MENU_ITEMS: MenuItem[] = [
 ];
 
 const CONFIG_REST_NAME = '__APP_CONFIG__';
-const CACHE_USER_KEY = 'grabandgo_cached_user';
-const CACHE_REST_KEY = 'grabandgo_cached_restaurant';
+const CACHE_USER_KEY = 'gg_secure_u'; // Changed to obscure key
+const CACHE_REST_KEY = 'gg_secure_r'; // Changed to obscure key
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Initialize from Cache if available for instant load
-  const [user, setUser] = useState<Profile | null>(() => {
-    if (typeof window !== 'undefined') {
-        try {
-            const cached = localStorage.getItem(CACHE_USER_KEY);
-            return cached ? JSON.parse(cached) : null;
-        } catch { return null; }
-    }
-    return null;
-  });
-
-  const [restaurant, setRestaurant] = useState<Restaurant | null>(() => {
-    if (typeof window !== 'undefined') {
-        try {
-            const cached = localStorage.getItem(CACHE_REST_KEY);
-            return cached ? JSON.parse(cached) : null;
-        } catch { return null; }
-    }
-    return null;
-  });
-
+  // Use null initial state for async decrypt load
+  const [user, setUser] = useState<Profile | null>(null);
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [loading, setLoading] = useState(true);
   
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
@@ -142,22 +130,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [ratings, setRatings] = useState<Rating[]>([]);
 
   const [isTestMode, setIsTestMode] = useState(false);
-  
-  const [isTestUser, setIsTestUser] = useState(() => {
+  const [isTestUser, setIsTestUser] = useState(false);
+
+  // --- Secure Storage Helper ---
+  const saveToCache = async (key: string, data: any) => {
       try {
-          if (typeof window !== 'undefined') {
-              return localStorage.getItem('isTestUser') === 'true';
-          }
-          return false;
-      } catch { return false; }
-  });
+          const encrypted = await encryptData(data);
+          if (encrypted) localStorage.setItem(key, encrypted);
+      } catch (e) { console.error("Cache Save Error", e); }
+  };
 
   // --- Initialization & Data Fetching ---
   useEffect(() => {
     let mounted = true;
 
     const init = async () => {
-      // 1. Check Backend Session to sync
+      // 1. Decrypt Local Storage
+      try {
+          const uEnc = localStorage.getItem(CACHE_USER_KEY);
+          if (uEnc) {
+              const uData = await decryptData(uEnc);
+              if (uData && mounted) setUser(uData);
+          }
+          const rEnc = localStorage.getItem(CACHE_REST_KEY);
+          if (rEnc) {
+              const rData = await decryptData(rEnc);
+              if (rData && mounted) setRestaurant(rData);
+          }
+          // Test User flag can be simple
+          if (localStorage.getItem('isTestUser') === 'true') setIsTestUser(true);
+      } catch (e) {
+          console.error("Secure Init Failed", e);
+      }
+
+      // 2. Check Backend Session to sync
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
@@ -165,14 +171,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const profile = await fetchUserProfile(session.user.id);
         if (profile && mounted) {
              setUser(profile);
-             localStorage.setItem(CACHE_USER_KEY, JSON.stringify(profile));
+             saveToCache(CACHE_USER_KEY, profile);
         }
         
         if (profile?.role === 'restaurant_owner') {
            const rest = await fetchRestaurantByOwner(profile.id);
            if (rest && mounted) {
                 setRestaurant(rest);
-                localStorage.setItem(CACHE_REST_KEY, JSON.stringify(rest));
+                saveToCache(CACHE_REST_KEY, rest);
            }
         }
       } 
@@ -191,12 +197,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
              const profile = await fetchUserProfile(session.user.id);
              if (mounted && profile) {
                  setUser(profile);
-                 localStorage.setItem(CACHE_USER_KEY, JSON.stringify(profile));
+                 saveToCache(CACHE_USER_KEY, profile);
                  if (profile.role === 'restaurant_owner') {
                      const rest = await fetchRestaurantByOwner(profile.id);
                      if (rest) {
                          setRestaurant(rest);
-                         localStorage.setItem(CACHE_REST_KEY, JSON.stringify(rest));
+                         saveToCache(CACHE_REST_KEY, rest);
                      }
                  }
              }
@@ -334,11 +340,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       
       const updated = { ...user, name, phone };
       setUser(updated);
-      localStorage.setItem(CACHE_USER_KEY, JSON.stringify(updated));
+      saveToCache(CACHE_USER_KEY, updated);
+  };
+  
+  const updateRestaurantSettings = async (settings: { upi_id?: string }) => {
+      if (!restaurant) return;
+      if (restaurant.id.startsWith('test-r')) {
+          setRestaurant({ ...restaurant, ...settings });
+          return;
+      }
+      await apiUpdateRestaurantSettings(restaurant.id, settings);
+      const updated = { ...restaurant, ...settings };
+      setRestaurant(updated);
+      saveToCache(CACHE_REST_KEY, updated);
   };
 
   const login = async (email: string, pass: string) => {
-    if (checkAdminPrivileges(email, pass)) {
+    // New Secure Hash Check
+    const isAdmin = await checkAdminPrivileges(email, pass);
+    if (isAdmin) {
          const adminProfile: Profile = {
             id: 'master-admin-bypass',
             name: 'Administrator',
@@ -347,7 +367,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             created_at: new Date().toISOString()
          };
          setUser(adminProfile);
-         localStorage.setItem(CACHE_USER_KEY, JSON.stringify(adminProfile));
+         saveToCache(CACHE_USER_KEY, adminProfile);
          return { data: { user: adminProfile }, error: null };
     }
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
@@ -385,8 +405,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
       setUser(mockOwnerProfile);
       setRestaurant(testRest);
-      localStorage.setItem(CACHE_USER_KEY, JSON.stringify(mockOwnerProfile));
-      localStorage.setItem(CACHE_REST_KEY, JSON.stringify(testRest));
+      saveToCache(CACHE_USER_KEY, mockOwnerProfile);
+      saveToCache(CACHE_REST_KEY, testRest);
       setTimeout(() => refreshOrders(), 100);
   };
 
@@ -497,7 +517,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   return (
     <AppContext.Provider value={{
-      user, restaurant, loading, login, signup, logout, updateProfile,
+      user, restaurant, loading, login, signup, logout, updateProfile, updateRestaurantSettings,
       restaurants, menu, orders,
       placeOrder, markOrderPaid, markOrderReady, completeOrder,
       addMenuItem, deleteMenuItem,

@@ -18,14 +18,15 @@ import {
     ShieldAlert,
     ListChecks,
     QrCode,
-    Settings
+    Settings,
+    Save
 } from 'lucide-react';
 import { parseMenuFromImage } from '../services/geminiService';
 
 const RestaurantDashboard: React.FC = () => {
-  const { user, restaurant, orders, markOrderPaid, markOrderReady, completeOrder, logout, menu, addMenuItem, deleteMenuItem } = useApp();
+  const { user, restaurant, orders, markOrderPaid, markOrderReady, completeOrder, logout, menu, addMenuItem, deleteMenuItem, updateRestaurantSettings } = useApp();
   const [verificationCode, setVerificationCode] = useState('');
-  const [activeTab, setActiveTab] = useState<'orders' | 'verify' | 'menu'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'verify' | 'menu' | 'settings'>('orders');
 
   // Menu State
   const [isAddingItem, setIsAddingItem] = useState(false);
@@ -33,6 +34,9 @@ const RestaurantDashboard: React.FC = () => {
   const [newItemPrice, setNewItemPrice] = useState('');
   const [newItemDesc, setNewItemDesc] = useState('');
   const [isProcessingAI, setIsProcessingAI] = useState(false);
+
+  // Settings State
+  const [editUpi, setEditUpi] = useState('');
 
   if (!restaurant) return <div className="p-10 text-center">Loading Restaurant Profile...</div>;
 
@@ -67,6 +71,17 @@ const RestaurantDashboard: React.FC = () => {
           alert("Order Completed Successfully!");
       } catch (e) {
           alert("Invalid Pickup Code.");
+      }
+  };
+
+  const handleUpdateSettings = async (e: React.FormEvent) => {
+      e.preventDefault();
+      try {
+          await updateRestaurantSettings({ upi_id: editUpi });
+          alert("Settings Saved!");
+          setEditUpi('');
+      } catch (e: any) {
+          alert("Failed: " + e.message);
       }
   };
 
@@ -156,11 +171,18 @@ const RestaurantDashboard: React.FC = () => {
                           <div className="flex justify-between items-start mb-3">
                               <div>
                                   <div className="flex items-center gap-2">
-                                      <span className="font-bold text-lg">Order #{order.pickup_code}</span>
+                                      <span className="font-bold text-lg">PIN: {order.pickup_code}</span>
                                       {!order.paid && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded font-bold">UNPAID</span>}
                                       {order.paid && <span className="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded font-bold">PAID</span>}
                                   </div>
-                                  <p className="text-xs text-slate-500">{new Date(order.created_at).toLocaleTimeString()}</p>
+                                  <div className="flex items-center gap-1 mt-1">
+                                      <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 border border-slate-200 font-mono">
+                                        ID: {order.id.slice(0,8).toUpperCase()}
+                                      </span>
+                                      <span className="text-xs text-slate-500 ml-1">
+                                         {new Date(order.created_at).toLocaleTimeString()}
+                                      </span>
+                                  </div>
                               </div>
                               <div className="text-right">
                                   <p className="font-bold text-xl">₹{order.total}</p>
@@ -227,7 +249,10 @@ const RestaurantDashboard: React.FC = () => {
                       <h3 className="text-xs font-bold text-slate-400 uppercase mb-2">Ready Orders</h3>
                       {myOrders.filter(o => o.status === 'ready').map(o => (
                           <div key={o.id} className="flex justify-between items-center py-2 border-b border-slate-50">
-                              <span className="font-bold">#{o.pickup_code}</span>
+                              <div>
+                                  <span className="font-bold mr-2">#{o.pickup_code}</span>
+                                  <span className="text-xs text-slate-400 font-mono">({o.id.slice(0,6)})</span>
+                              </div>
                               <button 
                                 onClick={() => completeOrder(o.id, verificationCode)}
                                 className="bg-slate-900 text-white px-3 py-1 rounded text-sm"
@@ -329,6 +354,35 @@ const RestaurantDashboard: React.FC = () => {
                   </div>
               </div>
           )}
+
+          {activeTab === 'settings' && (
+              <div className="p-4 space-y-6">
+                  <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+                      <h2 className="font-bold text-lg mb-4 flex items-center gap-2">
+                          <Settings className="w-5 h-5 text-slate-500" /> Payment Settings
+                      </h2>
+                      <form onSubmit={handleUpdateSettings}>
+                          <div className="mb-4">
+                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">UPI ID</label>
+                              <div className="flex items-center gap-2">
+                                  <input 
+                                    className="w-full border p-2 rounded-lg outline-none focus:border-indigo-500"
+                                    placeholder={restaurant.upi_id || 'Enter UPI ID'}
+                                    value={editUpi}
+                                    onChange={e => setEditUpi(e.target.value)}
+                                  />
+                              </div>
+                              <p className="text-xs text-slate-400 mt-1">
+                                  Current: {restaurant.upi_id || 'Not Set'}
+                              </p>
+                          </div>
+                          <button type="submit" className="bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2">
+                              <Save className="w-4 h-4" /> Save
+                          </button>
+                      </form>
+                  </div>
+              </div>
+          )}
       </main>
 
       {/* BOTTOM NAV */}
@@ -344,6 +398,10 @@ const RestaurantDashboard: React.FC = () => {
           <button onClick={() => setActiveTab('menu')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition ${activeTab === 'menu' ? 'text-indigo-600' : 'text-slate-400'}`}>
               <UtensilsCrossed className="w-6 h-6" />
               <span className="text-[10px] font-bold">Menu</span>
+          </button>
+          <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition ${activeTab === 'settings' ? 'text-indigo-600' : 'text-slate-400'}`}>
+              <Settings className="w-6 h-6" />
+              <span className="text-[10px] font-bold">Settings</span>
           </button>
       </div>
     </div>
