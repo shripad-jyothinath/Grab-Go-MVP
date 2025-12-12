@@ -162,6 +162,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, []);
 
+  // --- Notification Permission ---
+  useEffect(() => {
+    if (user) {
+        // Request notification permission when user is logged in
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission().then(permission => {
+                if (permission === 'granted') {
+                    console.log('Notification permission granted.');
+                }
+            });
+        }
+    }
+  }, [user]);
+
   const refreshRestaurants = async (mounted: boolean) => {
       // Fetch Restaurants
       const { data: rData } = await supabase.from('restaurants').select('*');
@@ -318,31 +332,58 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // --- System Config Logic ---
   const toggleTestMode = async () => {
-      // 1. Fetch current config row
-      const { data: existing } = await supabase.from('restaurants').select('*').eq('name', CONFIG_REST_NAME).single();
-      
-      let newStatus = !isTestMode;
+    try {
+        // 1. Fetch current config row
+        const { data: existing } = await supabase.from('restaurants').select('*').eq('name', CONFIG_REST_NAME).single();
+        
+        const newStatus = !isTestMode;
 
-      if (!existing) {
-          // Create Config Row if missing
-          // Use user.id if available, else a dummy ID if bypassing
-          const ownerId = user?.id || 'admin-system'; 
-          await supabase.from('restaurants').insert([{
-              owner_id: ownerId,
-              name: CONFIG_REST_NAME,
-              payment_method: 'upi',
-              verified: false,
-              banned: newStatus // Use banned col as the toggle
-          }]);
-      } else {
-          // Update existing
-          newStatus = !existing.banned; // Toggle current DB state
-          await supabase.from('restaurants').update({ banned: newStatus }).eq('id', existing.id);
-      }
+        if (!existing) {
+            // Create Config Row if missing
+            
+            // HACK: To bypass FK constraints on owner_id if we are using a fake admin account,
+            // we try to find a real user ID from the profiles table to assign this row to.
+            // If the user is logging in via bypass, 'user.id' is 'master-admin-bypass', which doesn't exist in auth.users.
+            let ownerId = user?.id;
+            
+            if (user?.id === 'master-admin-bypass') {
+                const { data: profiles } = await supabase.from('profiles').select('id').limit(1);
+                if (profiles && profiles.length > 0) {
+                    ownerId = profiles[0].id;
+                } else {
+                    // Fallback, might fail FK if no users exist
+                    console.warn("No real users found to assign config row ownership. DB Write might fail.");
+                }
+            }
 
-      setIsTestMode(newStatus);
-      // Refresh to update injected mocks
-      await refreshRestaurants(true);
+            const { error } = await supabase.from('restaurants').insert([{
+                owner_id: ownerId,
+                name: CONFIG_REST_NAME,
+                payment_method: 'upi',
+                verified: false,
+                banned: newStatus // Use banned col as the toggle
+            }]);
+            
+            if (error) throw error;
+
+        } else {
+            // Update existing
+            const { error } = await supabase.from('restaurants').update({ banned: newStatus }).eq('id', existing.id);
+            if (error) throw error;
+        }
+
+        // Optimistic update
+        setIsTestMode(newStatus);
+        
+        // Refresh to ensure sync
+        await refreshRestaurants(true);
+    } catch (e: any) {
+        console.error("Failed to toggle Test Mode:", e);
+        // Alert the user so they know why it reverted
+        alert("Failed to save Test Mode state. \n\nThis usually happens if you are in Admin Bypass mode but the database requires a real user for Foreign Key constraints. \n\nError: " + (e.message || "Permissions/Network error"));
+        // Revert state by refreshing from source of truth
+        refreshRestaurants(true);
+    }
   };
 
   // --- Cart ---

@@ -1,7 +1,25 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Order, MenuItem } from '../types';
-import { Bell, CheckCircle2, Hash, Clock, Wallet, LogOut, UtensilsCrossed, Plus, Trash2, Camera, Upload, Loader2, Sparkles, ShieldAlert } from 'lucide-react';
+import { 
+    Bell, 
+    CheckCircle2, 
+    Hash, 
+    Clock, 
+    Wallet, 
+    LogOut, 
+    UtensilsCrossed, 
+    Plus, 
+    Trash2, 
+    Camera, 
+    Upload, 
+    Loader2, 
+    Sparkles, 
+    ShieldAlert,
+    ListChecks,
+    QrCode,
+    Settings
+} from 'lucide-react';
 import { parseMenuFromImage } from '../services/geminiService';
 
 const RestaurantDashboard: React.FC = () => {
@@ -116,26 +134,22 @@ const RestaurantDashboard: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      <header className="bg-slate-900 text-white p-6 sticky top-0 z-10">
-          <div className="flex justify-between items-start mb-6">
+    <div className="min-h-screen bg-slate-50 pb-24">
+      {/* Header */}
+      <header className="bg-slate-900 text-white p-6 sticky top-0 z-10 shadow-md">
+          <div className="flex justify-between items-start">
               <div>
-                  <h1 className="text-2xl font-bold">{restaurant.name}</h1>
-                  <p className="text-slate-400 text-sm">Owner Dashboard</p>
+                  <h1 className="text-xl font-bold">{restaurant.name}</h1>
+                  <p className="text-slate-400 text-sm">Dashboard</p>
               </div>
               <button onClick={logout} className="text-xs bg-red-500/20 text-red-200 px-3 py-1 rounded-full"><LogOut className="w-3 h-3 inline mr-1" /> Logout</button>
-          </div>
-          
-          <div className="flex gap-4 border-b border-slate-700 overflow-x-auto">
-              <button onClick={() => setActiveTab('orders')} className={`pb-2 whitespace-nowrap ${activeTab === 'orders' ? 'text-orange-400 border-b-2 border-orange-400' : 'text-slate-400'}`}>Live Orders</button>
-              <button onClick={() => setActiveTab('verify')} className={`pb-2 whitespace-nowrap ${activeTab === 'verify' ? 'text-orange-400 border-b-2 border-orange-400' : 'text-slate-400'}`}>Pickup Verification</button>
-              <button onClick={() => setActiveTab('menu')} className={`pb-2 whitespace-nowrap ${activeTab === 'menu' ? 'text-orange-400 border-b-2 border-orange-400' : 'text-slate-400'}`}>Menu Management</button>
           </div>
       </header>
 
       <main className="p-4">
           {activeTab === 'orders' && (
               <div className="space-y-4">
+                  <h2 className="font-bold text-lg mb-2">Live Orders</h2>
                   {myOrders.length === 0 && <p className="text-center text-slate-400 py-10">No orders yet.</p>}
                   {myOrders.map(order => (
                       <div key={order.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
@@ -193,7 +207,7 @@ const RestaurantDashboard: React.FC = () => {
           )}
 
           {activeTab === 'verify' && (
-              <div className="max-w-md mx-auto bg-white p-6 rounded-2xl shadow-sm text-center">
+              <div className="max-w-md mx-auto bg-white p-6 rounded-2xl shadow-sm text-center mt-10">
                   <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
                       <Hash className="w-6 h-6 text-slate-600" />
                   </div>
@@ -235,7 +249,7 @@ const RestaurantDashboard: React.FC = () => {
                         className="bg-indigo-600 text-white p-4 rounded-xl flex flex-col items-center justify-center gap-2 shadow-sm hover:bg-indigo-700 transition"
                       >
                           <Plus className="w-6 h-6" />
-                          <span className="font-bold text-sm">Add Manually</span>
+                          <span className="font-bold text-sm">Add Item</span>
                       </button>
                       <label className="bg-orange-600 text-white p-4 rounded-xl flex flex-col items-center justify-center gap-2 shadow-sm hover:bg-orange-700 transition cursor-pointer relative overflow-hidden">
                           {isProcessingAI ? (
@@ -243,7 +257,7 @@ const RestaurantDashboard: React.FC = () => {
                           ) : (
                               <>
                                 <Sparkles className="w-6 h-6" />
-                                <span className="font-bold text-sm">AI Import</span>
+                                <span className="font-bold text-sm">Scan Menu</span>
                                 <input type="file" accept="image/*" className="hidden" onChange={handleAIImport} />
                               </>
                           )}
@@ -316,6 +330,22 @@ const RestaurantDashboard: React.FC = () => {
               </div>
           )}
       </main>
+
+      {/* BOTTOM NAV */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2 z-50 safe-area-pb">
+          <button onClick={() => setActiveTab('orders')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition ${activeTab === 'orders' ? 'text-indigo-600' : 'text-slate-400'}`}>
+              <ListChecks className="w-6 h-6" />
+              <span className="text-[10px] font-bold">Orders</span>
+          </button>
+          <button onClick={() => setActiveTab('verify')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition ${activeTab === 'verify' ? 'text-indigo-600' : 'text-slate-400'}`}>
+              <QrCode className="w-6 h-6" />
+              <span className="text-[10px] font-bold">Verify</span>
+          </button>
+          <button onClick={() => setActiveTab('menu')} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition ${activeTab === 'menu' ? 'text-indigo-600' : 'text-slate-400'}`}>
+              <UtensilsCrossed className="w-6 h-6" />
+              <span className="text-[10px] font-bold">Menu</span>
+          </button>
+      </div>
     </div>
   );
 };
