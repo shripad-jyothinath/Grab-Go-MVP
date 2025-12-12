@@ -217,8 +217,8 @@ const StudentDashboard: React.FC = () => {
                       </div>
                   </form>
 
-                  {/* Test Mode Control Panel (Only for Test Users) */}
-                  {isTestUser && (
+                  {/* Test Mode Control Panel (Only for Test Users AND if Global Test Mode is ON) */}
+                  {isTestUser && isTestMode && (
                       <div className="bg-yellow-50 p-6 rounded-xl shadow-sm border border-yellow-200 animate-fade-in">
                           <h2 className="font-bold text-lg mb-2 flex items-center gap-2 text-yellow-800">
                               <Zap className="w-5 h-5 fill-yellow-600 text-yellow-800" /> Test Mode Active
@@ -243,16 +243,23 @@ const StudentDashboard: React.FC = () => {
                       </div>
                   )}
 
-                  {/* App Version / Hidden Trigger */}
-                  <div className="pt-10 text-center pb-10">
-                      <button 
-                        onClick={handleVersionTap}
-                        className="text-xs text-slate-400 font-medium focus:outline-none select-none"
-                      >
-                          Grab&Go App Version 1.0.2 <br />
-                          Build 2024.10.25
-                      </button>
-                  </div>
+                  {/* App Version / Hidden Trigger (Disabled if already test user) */}
+                  {!isTestUser && (
+                    <div className="pt-10 text-center pb-10">
+                        <button 
+                            onClick={handleVersionTap}
+                            className="text-xs text-slate-400 font-medium focus:outline-none select-none"
+                        >
+                            Grab&Go App Version 1.0.2 <br />
+                            Build 2024.10.25
+                        </button>
+                    </div>
+                  )}
+                  {isTestUser && (
+                     <div className="pt-10 text-center pb-10">
+                         <p className="text-xs text-green-600 font-bold uppercase tracking-wider">Developer Account Enabled</p>
+                     </div>
+                  )}
               </div>
 
               {/* PIN Modal */}

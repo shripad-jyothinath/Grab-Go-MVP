@@ -106,10 +106,31 @@ const TEST_MENU_ITEMS: MenuItem[] = [
 ];
 
 const CONFIG_REST_NAME = '__APP_CONFIG__';
+const CACHE_USER_KEY = 'grabandgo_cached_user';
+const CACHE_REST_KEY = 'grabandgo_cached_restaurant';
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<Profile | null>(null);
-  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+  // Initialize from Cache if available for instant load
+  const [user, setUser] = useState<Profile | null>(() => {
+    if (typeof window !== 'undefined') {
+        try {
+            const cached = localStorage.getItem(CACHE_USER_KEY);
+            return cached ? JSON.parse(cached) : null;
+        } catch { return null; }
+    }
+    return null;
+  });
+
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(() => {
+    if (typeof window !== 'undefined') {
+        try {
+            const cached = localStorage.getItem(CACHE_REST_KEY);
+            return cached ? JSON.parse(cached) : null;
+        } catch { return null; }
+    }
+    return null;
+  });
+
   const [loading, setLoading] = useState(true);
   
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
@@ -122,10 +143,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const [isTestMode, setIsTestMode] = useState(false);
   
-  // Persist Test User status in session storage
   const [isTestUser, setIsTestUser] = useState(() => {
       try {
-          return sessionStorage.getItem('isTestUser') === 'true';
+          if (typeof window !== 'undefined') {
+              return localStorage.getItem('isTestUser') === 'true';
+          }
+          return false;
       } catch { return false; }
   });
 
@@ -134,29 +157,59 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let mounted = true;
 
     const init = async () => {
-      // 1. Check Session
+      // 1. Check Backend Session to sync
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
+        // If we have a session, ensure our local state is fresh
         const profile = await fetchUserProfile(session.user.id);
-        if (profile && mounted) setUser(profile);
+        if (profile && mounted) {
+             setUser(profile);
+             localStorage.setItem(CACHE_USER_KEY, JSON.stringify(profile));
+        }
         
         if (profile?.role === 'restaurant_owner') {
            const rest = await fetchRestaurantByOwner(profile.id);
-           if (rest && mounted) setRestaurant(rest);
+           if (rest && mounted) {
+                setRestaurant(rest);
+                localStorage.setItem(CACHE_REST_KEY, JSON.stringify(rest));
+           }
         }
-      }
+      } 
 
       await refreshRestaurants(mounted);
-
-      // Initial Menu Fetch handled by useEffect below dependent on isTestMode
       
       if (mounted) setLoading(false);
     };
 
     init();
 
-    // 4. Realtime Subscription
+    // 2. Auth State Listener
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+             // Fetch fresh profile
+             const profile = await fetchUserProfile(session.user.id);
+             if (mounted && profile) {
+                 setUser(profile);
+                 localStorage.setItem(CACHE_USER_KEY, JSON.stringify(profile));
+                 if (profile.role === 'restaurant_owner') {
+                     const rest = await fetchRestaurantByOwner(profile.id);
+                     if (rest) {
+                         setRestaurant(rest);
+                         localStorage.setItem(CACHE_REST_KEY, JSON.stringify(rest));
+                     }
+                 }
+             }
+        } else if (event === 'SIGNED_OUT') {
+            if (mounted) {
+                setUser(null);
+                setRestaurant(null);
+                localStorage.removeItem(CACHE_USER_KEY);
+                localStorage.removeItem(CACHE_REST_KEY);
+            }
+        }
+    });
+
     const orderChannel = supabase.channel('public:orders')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => refreshOrders())
       .subscribe();
@@ -171,6 +224,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     return () => {
       mounted = false;
+      authListener.subscription.unsubscribe();
       supabase.removeChannel(orderChannel);
       supabase.removeChannel(menuChannel);
       supabase.removeChannel(restChannel);
@@ -192,8 +246,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               cuisine: r.cuisine || 'Multi-Cuisine'
             }));
           
-          if (testModeActive) {
-             mapped = [...mapped, ...TEST_RESTAURANTS];
+          // Inject test restaurants if System is in Test Mode OR Current User is a Test User
+          if (testModeActive || isTestUser) {
+             const ids = new Set(mapped.map((r: any) => r.id));
+             TEST_RESTAURANTS.forEach(tr => {
+                 if(!ids.has(tr.id)) mapped.push(tr);
+             });
           }
 
           setRestaurants(mapped);
@@ -203,17 +261,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const refreshMenu = async () => {
       const { data: mData } = await supabase.from('menu_items').select('*');
       let finalMenu = mData ? (mData as any[]) : [];
-      
-      if (isTestMode) {
-          finalMenu = [...finalMenu, ...TEST_MENU_ITEMS];
-      }
+      if (isTestMode || isTestUser) finalMenu = [...finalMenu, ...TEST_MENU_ITEMS];
       setMenu(finalMenu);
   };
 
-  // Re-fetch menu when Test Mode toggles to inject/remove test items
-  useEffect(() => {
-      refreshMenu();
-  }, [isTestMode]);
+  // Re-fetch data when test status changes
+  useEffect(() => { 
+      refreshMenu(); 
+      refreshRestaurants(true); 
+  }, [isTestMode, isTestUser]);
 
   const refreshOrders = async () => {
       if (!user) return;
@@ -229,7 +285,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               const mapped = testData.map(t => ({ 
                   ...t, 
                   is_test: true, 
-                  items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items // Handle potential stringification
+                  items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items 
               }));
               setOrders(mapped as any);
           }
@@ -238,7 +294,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // 1. Fetch Real Orders
       let query = supabase.from('orders').select('*, profiles(name, phone)');
-      
       if (user.role === 'restaurant_owner' && restaurant) {
           query = query.eq('restaurant_id', restaurant.id);
       } else if (user.role === 'customer') {
@@ -248,16 +303,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const { data: realOrders } = await query.order('created_at', { ascending: false });
       let allOrders = realOrders ? (realOrders as any[]) : [];
 
-      // 2. Fetch Test Orders if Test Mode is ON
-      if (isTestMode) {
+      // 2. Fetch Test Orders if Test Mode is ON OR isTestUser
+      if (isTestMode || isTestUser) {
           let testQuery = supabase.from('test_orders').select('*');
-          
-          if (user.role === 'customer') {
-             testQuery = testQuery.eq('customer_id', user.id);
-          }
-
+          if (user.role === 'customer') testQuery = testQuery.eq('customer_id', user.id);
           const { data: testData } = await testQuery.order('created_at', { ascending: false });
-          
           if (testData) {
               const mappedTests = testData.map(t => ({ 
                   ...t, 
@@ -274,14 +324,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   useEffect(() => {
       if (user) refreshOrders();
-  }, [user, restaurant, isTestMode, restaurants]);
+  }, [user, restaurant, isTestMode, restaurants, isTestUser]);
 
   // --- Auth & Profile ---
   const updateProfile = async (name: string, phone: string) => {
       if (!user) return;
       const { error } = await supabase.from('profiles').update({ name, phone }).eq('id', user.id);
       if (error) throw new Error(error.message);
-      setUser(prev => prev ? { ...prev, name, phone } : null);
+      
+      const updated = { ...user, name, phone };
+      setUser(updated);
+      localStorage.setItem(CACHE_USER_KEY, JSON.stringify(updated));
   };
 
   const login = async (email: string, pass: string) => {
@@ -294,18 +347,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             created_at: new Date().toISOString()
          };
          setUser(adminProfile);
+         localStorage.setItem(CACHE_USER_KEY, JSON.stringify(adminProfile));
          return { data: { user: adminProfile }, error: null };
     }
-
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
-    if (!error && data.session) {
-         const profile = await fetchUserProfile(data.session.user.id);
-         setUser(profile);
-         if (profile?.role === 'restaurant_owner') {
-             const rest = await fetchRestaurantByOwner(profile.id);
-             setRestaurant(rest);
-         }
-    }
     return { data, error };
   };
 
@@ -315,17 +360,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const logout = async () => {
       await supabase.auth.signOut();
-      setUser(null);
-      setRestaurant(null);
-      setOrders([]);
-      setCart([]);
   };
 
-  // --- Test User & Test Restaurant Login ---
+  // --- Test User ---
   const enableTestUser = (code: string) => {
       if (code === '4321') {
           setIsTestUser(true);
-          sessionStorage.setItem('isTestUser', 'true');
+          localStorage.setItem('isTestUser', 'true'); 
           return true;
       }
       return false;
@@ -334,8 +375,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const loginAsTestRestaurant = async (restaurantId: string) => {
       const testRest = TEST_RESTAURANTS.find(r => r.id === restaurantId);
       if (!testRest) return;
-
-      // Create a mock profile for the test owner
       const mockOwnerProfile: Profile = {
           id: testRest.owner_id,
           name: 'Test Owner',
@@ -344,18 +383,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           banned: false,
           created_at: new Date().toISOString()
       };
-
       setUser(mockOwnerProfile);
       setRestaurant(testRest);
-      // Wait a tick for state to settle then fetch orders
+      localStorage.setItem(CACHE_USER_KEY, JSON.stringify(mockOwnerProfile));
+      localStorage.setItem(CACHE_REST_KEY, JSON.stringify(testRest));
       setTimeout(() => refreshOrders(), 100);
   };
 
-  // --- Orders ---
+  // --- Actions ---
   const placeOrder = async (restaurantId: string, items: CartItem[], total: number) => {
       try {
         let response;
-        if (isTestMode) {
+        // Route to test system if global test mode is on OR if ordering from a test restaurant
+        if (isTestMode || restaurantId.startsWith('test-')) {
              response = await apiCreateTestOrder(restaurantId, items, total);
         } else {
              response = await apiCreateOrder(restaurantId, items, total);
@@ -370,17 +410,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             clearCart();
             return response;
         }
-      } catch (e) {
-          console.error(e);
-          throw e;
-      }
+      } catch (e) { console.error(e); throw e; }
   };
 
   const markOrderPaid = async (orderId: string) => {
-      try {
-         await apiMarkPaid(orderId);
-         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, paid: true } : o));
-      } catch (e) { console.error(e); alert("Failed to mark paid"); }
+      try { await apiMarkPaid(orderId); setOrders(prev => prev.map(o => o.id === orderId ? { ...o, paid: true } : o)); } catch (e) { console.error(e); alert("Failed to mark paid"); }
   };
 
   const markOrderReady = async (orderId: string) => {
@@ -389,18 +423,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const completeOrder = async (orderId: string, code: string) => {
-      try {
-          await apiCompleteOrder(orderId, code);
-          setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'completed' } : o));
-      } catch (e) {
-          console.error(e);
-          throw e;
-      }
+      try { await apiCompleteOrder(orderId, code); setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'completed' } : o)); } catch (e) { console.error(e); throw e; }
   };
   
-  // --- Menu Management ---
   const addMenuItem = async (item: Omit<MenuItem, 'id' | 'created_at'>) => {
-      // If Test Restaurant, just mock add to state (backend won't accept unauthorized insert)
       if (restaurant?.id.startsWith('test-r')) {
           const mockItem = { ...item, id: `test-item-${Date.now()}`, created_at: new Date().toISOString() } as MenuItem;
           setMenu(prev => [...prev, mockItem]);
@@ -411,15 +437,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const deleteMenuItem = async (id: string) => {
-      if (restaurant?.id.startsWith('test-r')) {
-           setMenu(prev => prev.filter(i => i.id !== id));
-           return;
-      }
+      if (restaurant?.id.startsWith('test-r')) { setMenu(prev => prev.filter(i => i.id !== id)); return; }
       await apiDeleteMenuItem(id);
       setMenu(prev => prev.filter(i => i.id !== id));
   };
 
-  // --- Admin Actions ---
   const deleteRestaurant = async (id: string) => {
      await supabase.from('restaurants').delete().eq('id', id);
      setRestaurants(prev => prev.filter(r => r.id !== id));
@@ -437,7 +459,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
      return { averageRating: avg, reviewCount: count };
   };
 
-  // --- System Config Logic ---
   const toggleTestMode = async () => {
     try {
         const { data: existing } = await supabase.from('restaurants').select('*').eq('name', CONFIG_REST_NAME).single();
@@ -449,30 +470,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 const { data: profiles } = await supabase.from('profiles').select('id').limit(1);
                 if (profiles && profiles.length > 0) ownerId = profiles[0].id;
             }
-
-            const { error } = await supabase.from('restaurants').insert([{
-                owner_id: ownerId,
-                name: CONFIG_REST_NAME,
-                payment_method: 'upi',
-                verified: false,
-                banned: newStatus 
-            }]);
+            const { error } = await supabase.from('restaurants').insert([{ owner_id: ownerId, name: CONFIG_REST_NAME, payment_method: 'upi', verified: false, banned: newStatus }]);
             if (error) throw error;
         } else {
             const { error } = await supabase.from('restaurants').update({ banned: newStatus }).eq('id', existing.id);
             if (error) throw error;
         }
-
         setIsTestMode(newStatus);
         await refreshRestaurants(true);
-    } catch (e: any) {
-        console.error("Failed to toggle Test Mode:", e);
-        alert("Failed to save Test Mode state.");
-        refreshRestaurants(true);
-    }
+    } catch (e: any) { console.error("Failed to toggle Test Mode:", e); alert("Failed to save Test Mode state."); refreshRestaurants(true); }
   };
 
-  // --- Cart ---
   const addToCart = (item: MenuItem) => {
     setCart(prev => {
       if (prev.length > 0 && prev[0].restaurant_id !== item.restaurant_id) {
@@ -480,9 +488,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return [{ ...item, quantity: 1 }];
       }
       const existing = prev.find(i => i.id === item.id);
-      return existing 
-        ? prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i)
-        : [...prev, { ...item, quantity: 1 }];
+      return existing ? prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i) : [...prev, { ...item, quantity: 1 }];
     });
   };
   const removeFromCart = (id: string) => setCart(prev => prev.filter(i => i.id !== id));
